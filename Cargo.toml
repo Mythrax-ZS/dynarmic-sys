@@ -1,12 +1,12 @@
 [package]
 name = "dynarmic-sys-mythrax"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = [
     "Mythrax <https://github.com/Mythrax-ZS>",
     "wyourname <https://github.com/wyourname/dynarmic-sys>",
 ]
-description = "Rust wrapper for the Dynarmic ARM dynamic recompiler — Mythrax fork of dynarmic-sys with Windows MSVC build fixes (mman shim + MSVC link directives)."
+description = "Rust wrapper for the Dynarmic ARM dynamic recompiler — Mythrax fork of dynarmic-sys with Windows MSVC build fixes (mman shim + MSVC link directives) and TPIDRRO_EL0 / emu_start overflow corrections."
 license = "0BSD"
 repository = "https://github.com/Mythrax-ZS/dynarmic-sys"
 readme = "README.md"

@@ -551,8 +551,9 @@ FQL int reg_write_nzcv(dynarmic* dynarmic, u64 value) {
 FQL int reg_write_tpidr_el0(dynarmic* dynarmic, u64 value) { if (dynarmic->jit64) dynarmic->jit64->SetTPIDR_EL0(value); return 0; }
 FQL u64 reg_read_tpidr_el0(dynarmic* dynarmic) { return dynarmic->jit64 ? dynarmic->jit64->GetTPIDR_EL0() : 0; }
 FQL int reg_write_tpidrr0_el0(dynarmic* dynarmic, u64 value) { if (dynarmic->jit64) dynarmic->jit64->SetTPIDRRO_EL0(value); return 0; }
+FQL u64 reg_read_tpidrr0_el0(dynarmic* dynarmic) { return dynarmic->tpidrro_el0_val; }
 
-FQL int reg_write(dynarmic* d, u64 index, u64 value) { 
+FQL int reg_write(dynarmic* d, u64 index, u64 value) {
     if (d->jit64) {
         if (index < 31) d->jit64->SetRegister(index, value);
         else if (index == 31 || index == 410) d->jit64->SetSP(value);

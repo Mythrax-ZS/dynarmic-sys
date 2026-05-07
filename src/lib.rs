@@ -230,7 +230,9 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         unsafe {
             debug!("[Dynarmic] Starting emulator: pc=0x{:x}", pc);
 
-            (*self.metadata.get()).until = until + 4;
+            // saturating_add so callers can pass u64::MAX as a sentinel
+            // "no synthetic stop" without overflowing.
+            (*self.metadata.get()).until = until.saturating_add(4);
 
             let ret = ffi::dynarmic_emu_start(self.cur_handle, pc);
             if ret != 0 {
@@ -491,12 +493,22 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         }
     }
 
-    /// Writes the Thread ID Read-Only Register (EL0).
+    /// Writes the Thread ID Read-Only Register (EL0). On real ARM64 this is
+    /// a separate system register from `TPIDR_EL0` (R/W) and is read by
+    /// `MRS Xn, TPIDRRO_EL0`. Prior to 0.2.1 this method incorrectly aliased
+    /// to `reg_write_tpidr_el0`, so guests reading `TPIDRRO_EL0` always saw
+    /// 0 — breaking any TLS scheme (libnx) that uses that register.
     pub fn reg_write_tpidrr0_el0(&self, value: u64) -> anyhow::Result<()> {
         unsafe {
-            ffi::reg_write_tpidr_el0(self.cur_handle, value);
+            ffi::reg_write_tpidrr0_el0(self.cur_handle, value);
         }
         Ok(())
+    }
+
+    /// Reads the Thread ID Read-Only Register (EL0). Returns whatever was
+    /// last written via `reg_write_tpidrr0_el0`; distinct from `TPIDR_EL0`.
+    pub fn reg_read_tpidrr0_el0(&self) -> anyhow::Result<u64> {
+        unsafe { Ok(ffi::reg_read_tpidrr0_el0(self.cur_handle)) }
     }
 
     /// Writes the NZCV (flags) register.
