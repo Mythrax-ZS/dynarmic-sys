@@ -1,0 +1,32 @@
+[package]
+name = "dynarmic-sys-mythrax"
+version = "0.2.0"
+edition = "2021"
+authors = [
+    "Mythrax <https://github.com/Mythrax-ZS>",
+    "wyourname <https://github.com/wyourname/dynarmic-sys>",
+]
+description = "Rust wrapper for the Dynarmic ARM dynamic recompiler — Mythrax fork of dynarmic-sys with Windows MSVC build fixes (mman shim + MSVC link directives)."
+license = "0BSD"
+repository = "https://github.com/Mythrax-ZS/dynarmic-sys"
+readme = "README.md"
+keywords = ["arm", "arm64", "jit", "dynarmic", "emulator"]
+categories = ["emulators", "external-ffi-bindings"]
+build = "build.rs"
+
+[lib]
+name = "dynarmic_sys"
+path = "src/lib.rs"
+
+[[example]]
+name = "basic_a64"
+path = "examples/basic_a64.rs"
+
+[dependencies]
+anyhow = "1.0"
+log = "0.4"
+
+[build-dependencies]
+cmake = "0.1"
+cc = "1.0"
+pkg-config = "0.3"
