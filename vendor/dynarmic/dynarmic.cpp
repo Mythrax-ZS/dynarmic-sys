@@ -305,8 +305,17 @@ FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::Ex
 
     if(unsafe_optimizations) {
         config.unsafe_optimizations = true;
+        // Updated By Mythrax: enable the full set of Unsafe_* flags
+        // dynarmic exposes, not just the two it had before. UnfuseFMA /
+        // InaccurateNaN / IgnoreStandardFPCRValue are the FP-side wins
+        // yuzu enables by default; for FP-light guests the delta is small,
+        // but for anything doing rotation matrices, sin/cos, or FRCP
+        // chains it adds up.
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
     }
 
     backend->num_page_table_entries = 1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS);
@@ -352,8 +361,12 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
 
     if(unsafe_optimizations) {
         config.unsafe_optimizations = true;
+        // Updated By Mythrax: full set of Unsafe_* flags (matches A64 path).
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
     }
 
     backend->num_page_table_entries = 1ULL << (32 - DYN_PAGE_BITS);
