@@ -19,7 +19,17 @@ using usize = std::size_t;
 using addr = u64;
 
 
-#define PAGE_TABLE_ADDRESS_SPACE_BITS 36
+// Updated By Mythrax: bumped from 36 → 40 so AArch64 guest VAs at the
+// HOS-conventional ranges (CODE 0x80_xx, HEAP 0x90_xx, STACK 0xA0_xx,
+// TLS/env 0xB0_xx — all ≥ 2^39) actually fit in the page table. With
+// the previous 36-bit limit, every page-table install in dynarmic_mmap /
+// dynarmic_mem_map_ptr fell through the `idx < (1 << (PT_BITS - 12))`
+// guard, so dynarmic's JIT-emitted load/store path always missed and
+// fell back to the C++ virtual MemoryReadN callbacks. End-to-end this
+// made the JIT 6–12× slower than unicorn TCG on guests using the
+// HOS layout. Page-table reservation grows from ~128 MB to ~2 GB of
+// MAP_NORESERVE'd address space; physical footprint stays small.
+#define PAGE_TABLE_ADDRESS_SPACE_BITS 40
 #define DYN_PAGE_BITS 12 // 4k
 #define DYN_PAGE_SIZE (1ULL << DYN_PAGE_BITS)
 #define DYN_PAGE_MASK (DYN_PAGE_SIZE-1)
