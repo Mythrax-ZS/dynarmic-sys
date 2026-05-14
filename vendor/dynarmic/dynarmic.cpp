@@ -304,18 +304,12 @@ FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::Ex
     config.code_cache_size = jit_size;
 
     if(unsafe_optimizations) {
+        // BISECT: UnfuseFMA confirmed safe. Testing UnfuseFMA+IgnoreGlobalMonitor.
+        // If visuals are identical to UnfuseFMA-only, both are safe and we bisect
+        // the FP trio next (ReducedErrorFP, InaccurateNaN, IgnoreStandardFPCRValue).
         config.unsafe_optimizations = true;
-        // Updated By Mythrax: enable the full set of Unsafe_* flags
-        // dynarmic exposes, not just the two it had before. UnfuseFMA /
-        // InaccurateNaN / IgnoreStandardFPCRValue are the FP-side wins
-        // yuzu enables by default; for FP-light guests the delta is small,
-        // but for anything doing rotation matrices, sin/cos, or FRCP
-        // chains it adds up.
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
+        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
     }
 
     backend->num_page_table_entries = 1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS);
@@ -335,6 +329,13 @@ FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::Ex
     config.fastmem_pointer = std::nullopt;
     config.recompile_on_exclusive_fastmem_failure = true;
     config.enable_cycle_counting = false;
+    // FastDispatch and ReturnStackBuffer emit BL/RET dispatch paths that jump
+    // directly to the next block without checking halt_reason. With cycle
+    // counting disabled, these paths never return from emu_start when the
+    // watchdog fires HaltExecution(). Disable both so all block transitions
+    // fall through to the dispatcher loop, which does check halt_reason.
+    config.optimizations &= ~(Dynarmic::OptimizationFlag::FastDispatch |
+                               Dynarmic::OptimizationFlag::ReturnStackBuffer);
 
     backend->cb64 = callbacks;
     backend->jit64 = new Dynarmic::A64::Jit(config);
