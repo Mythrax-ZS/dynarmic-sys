@@ -156,6 +156,19 @@ fn build_with_cmake() {
             println!("cargo:rustc-link-lib=static=Zycore");
             println!("cargo:rustc-link-lib=static=Zydis");
         }
+        // dynarmic / fmt / mcl are C++. rustc drives the final link with `cc`, not
+        // `c++`, so the C++ runtime is not pulled in implicitly. Without this,
+        // FreeBSD (libc++ -> std::__1::locale::*) and macOS fail with unresolved
+        // std symbols out of format.cc. Linux GCC typically still resolves
+        // libstdc++ via the dependent-lib hint in the .o files, but be explicit.
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let cxx_runtime = match target_os.as_str() {
+            "macos" | "ios" | "tvos" | "watchos"
+            | "freebsd" | "dragonfly" | "openbsd" | "netbsd" => "c++",
+            "android" => "c++_shared",
+            _ => "stdc++",
+        };
+        println!("cargo:rustc-link-lib={}", cxx_runtime);
     }
 }
 
@@ -178,6 +191,15 @@ fn main() {
             if cfg!(target_arch = "x86_64") {
                 println!("cargo:rustc-link-lib=Zydis");
             }
+
+            let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+            let cxx_runtime = match target_os.as_str() {
+                "macos" | "ios" | "tvos" | "watchos"
+                | "freebsd" | "dragonfly" | "openbsd" | "netbsd" => "c++",
+                "android" => "c++_shared",
+                _ => "stdc++",
+            };
+            println!("cargo:rustc-link-lib={}", cxx_runtime);
         }
         Err(_) => {
             println!("pkg-config could not find dynarmic, building from source");
