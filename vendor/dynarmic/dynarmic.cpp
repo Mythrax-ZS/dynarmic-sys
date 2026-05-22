@@ -281,7 +281,11 @@ FQL Dynarmic::ExclusiveMonitor *dynarmic_init_monitor(u32 processor_count) {
 
 FQL void** dynarmic_init_page_table() {
     size_t size = (1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS)) * sizeof(void *);
+#ifdef MAP_NORESERVE
     void **page_table = (void **) mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
+#else
+    void **page_table = (void **) mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+#endif
     return (page_table == MAP_FAILED) ? nullptr : page_table;
 }
 
