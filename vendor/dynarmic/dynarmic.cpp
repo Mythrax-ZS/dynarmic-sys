@@ -59,7 +59,11 @@ public:
             : memory{memory} {}
 
     bool IsReadOnlyMemory(u64 vaddr) override { return false; }
-    std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override { return MemoryRead32(vaddr); }
+    std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override {
+        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        if (dest) return *dest;
+        return std::nullopt;
+    }
 
     u8 MemoryRead8(u64 vaddr) override {
         u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
@@ -149,6 +153,12 @@ class DynarmicCallbacks32 final : public Dynarmic::A32::UserCallbacks {
 public:
     explicit DynarmicCallbacks32(khash_t(memory) *memory)
             : memory{memory} {}
+
+    std::optional<std::uint32_t> MemoryReadCode(VAddr vaddr) override {
+        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        if (dest) return *dest;
+        return std::nullopt;
+    }
 
     u8 MemoryRead8(u32 vaddr) override {
         u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
