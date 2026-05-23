@@ -154,7 +154,7 @@ public:
     explicit DynarmicCallbacks32(khash_t(memory) *memory)
             : memory{memory} {}
 
-    std::optional<std::uint32_t> MemoryReadCode(VAddr vaddr) override {
+    std::optional<std::uint32_t> MemoryReadCode(u32 vaddr) override {
         u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
         if (dest) return *dest;
         return std::nullopt;
