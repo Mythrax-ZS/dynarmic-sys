@@ -1,4 +1,12 @@
 #include <array>
+#include <chrono>
+
+static inline std::uint64_t nexium_get_cntpct(void) {
+    static const auto epoch = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - epoch).count();
+    return static_cast<std::uint64_t>(ns) * 24ULL / 1250ULL;
+}
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -133,7 +141,7 @@ public:
 
     void AddTicks(u64 ticks) override {}
     u64 GetTicksRemaining() override { return 0x10000000000ULL; }
-    u64 GetCNTPCT() override { return 0x10000000000ULL; }
+    u64 GetCNTPCT() override { return nexium_get_cntpct(); }
 
     u64 tpidrro_el0 = 0;
     u64 tpidr_el0 = 0;
