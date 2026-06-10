@@ -164,6 +164,58 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         }
     }
 
+    /// Creates a new Dynarmic instance for ARM64 (A64) emulation with fastmem.
+    ///
+    /// `fastmem_base` must point to a host virtual-address reservation that backs the
+    /// entire guest address space (size = 1 << PAGE_TABLE_ADDRESS_SPACE_BITS), with
+    /// guest pages committed at `fastmem_base + guest_va`. Guest loads/stores compile
+    /// to direct host accesses; faults fall back to the memory callbacks.
+    pub fn new_fastmem(fastmem_base: *mut std::ffi::c_void) -> Dynarmic<'static, T> {
+        let memory = unsafe { ffi::dynarmic_init_memory() };
+        if memory == null_mut() {
+            error!("Failed to initialize memory");
+            exit(0)
+        }
+
+        let mut jit_size = std::env::var("DYNARMIC_JIT_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(64);
+
+        if jit_size < 8 {
+            warn!("JIT size {}MB is too small, setting to 8MB", jit_size);
+            jit_size = 8;
+        } else if jit_size > 512 {
+            warn!("JIT size {}MB is too large, setting to 512MB", jit_size);
+            jit_size = 512;
+        }
+
+        let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
+        let page_table = unsafe { ffi::dynarmic_init_page_table() };
+        let handle = unsafe {
+            ffi::dynarmic_new_fm(0, memory, monitor, page_table, jit_size * 1024 * 1024, true, fastmem_base)
+        };
+
+        debug!(
+            "[Dynarmic] Created fastmem Dynarmic instance: {:X} base={:X} with {}MB JIT",
+            handle as usize, fastmem_base as usize, jit_size
+        );
+
+        Dynarmic {
+            cur_handle: handle,
+            metadata: Arc::new(UnsafeCell::new(Metadata {
+                svc_callback: None,
+                unmapped_mem_callback: None,
+                until: 0,
+                _memory: memory,
+                _monitor: monitor,
+                _page_table: page_table,
+                handle,
+            })),
+            pd: PhantomData,
+        }
+    }
+
     /// Creates a new Dynarmic instance for ARM32 (A32) emulation.
     ///
     /// The JIT cache size can be configured via the `DYNARMIC_JIT_SIZE` environment variable (in MB).
@@ -656,7 +708,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// The callback receives the emulator instance, the SWI number, the end address, and the current PC.
     pub fn set_svc_callback<F: 'a>(&self, callback: F)
     where
-        F: FnMut(&Dynarmic<T>, u32, u64, u64) + Send + Sync,
+        F: FnMut(&Dynarmic<T>, u32, u64, u64),
     {
         debug!("[Dynarmic] Setting SVC callback");
         unsafe {
@@ -668,7 +720,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
 
             extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(swi: u32, user_data: *const c_void)
             where
-                F: FnMut(&Dynarmic<T>, u32, u64, u64) + Send + Sync,
+                F: FnMut(&Dynarmic<T>, u32, u64, u64),
             {
                 if swi == 114514 {
                     return;
@@ -696,7 +748,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// The callback should return `true` if the access was handled, `false` otherwise.
     pub fn set_unmapped_mem_callback<F: 'a>(&self, callback: F)
     where
-        F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool + Send + Sync,
+        F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool,
     {
         debug!("[Dynarmic] Setting unmapped memory callback");
         unsafe {
@@ -713,7 +765,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 user_data: *const c_void,
             ) -> bool
             where
-                F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool + Send + Sync,
+                F: FnMut(&Dynarmic<T>, u64, usize, u64) -> bool,
             {
                 unsafe {
                     let cb = &mut *(user_data as *mut DyHook<T, F>);
