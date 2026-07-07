@@ -1057,19 +1057,18 @@ static void EmitSub(BlockOfCode& code, EmitContext& ctx, IR::Inst* inst, int bit
             invert_output_carry = false;
         }
     } else {
-        OpArg op_arg = ctx.reg_alloc.UseOpArg(args[1]);
-        op_arg.setBit(bitsize);
+        const Xbyak::Reg op_arg = ctx.reg_alloc.UseScratchGpr(args[1]).changeBit(bitsize);
         if (carry_in.IsImmediate()) {
             if (carry_in.GetImmediateU1()) {
-                code.sub(result, *op_arg);
+                code.sub(result, op_arg);
             } else {
                 code.stc();
-                code.sbb(result, *op_arg);
+                code.sbb(result, op_arg);
             }
         } else {
             code.bt(carry.cvt32(), 0);
             code.cmc();
-            code.sbb(result, *op_arg);
+            code.sbb(result, op_arg);
         }
     }
 
