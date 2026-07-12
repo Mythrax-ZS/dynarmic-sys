@@ -133,6 +133,8 @@ extern "C" {
 
     pub fn dynarmic_emu_start(dynarmic: *mut c_void, pc: u64) -> i32;
 
+    pub fn dynarmic_emu_start_bounded(dynarmic: *mut c_void, pc: u64, ticks: u64) -> i32;
+
     pub fn dynarmic_emu_stop(dynarmic: *mut c_void) -> i32;
 
     pub fn dynarmic_context_alloc() -> *mut c_void;

@@ -8,6 +8,7 @@ static inline std::uint64_t nexium_get_cntpct(void) {
     return static_cast<std::uint64_t>(ns) * 24ULL / 1250ULL;
 }
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <exception>
 #include <memory>
@@ -16,6 +17,9 @@ static inline std::uint64_t nexium_get_cntpct(void) {
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "ConstantConditionsOC"
@@ -61,6 +65,35 @@ static inline void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_pa
     return page ? &page[vaddr & DYN_PAGE_MASK] : nullptr;
 }
 
+template<typename T>
+static bool atomic_compare_write(T* pointer, T value, T expected) {
+#if defined(_MSC_VER)
+    if constexpr (sizeof(T) == 1) {
+        return static_cast<T>(_InterlockedCompareExchange8(reinterpret_cast<volatile char*>(pointer), static_cast<char>(value), static_cast<char>(expected))) == expected;
+    } else if constexpr (sizeof(T) == 2) {
+        return static_cast<T>(_InterlockedCompareExchange16(reinterpret_cast<volatile short*>(pointer), static_cast<short>(value), static_cast<short>(expected))) == expected;
+    } else if constexpr (sizeof(T) == 4) {
+        return static_cast<T>(_InterlockedCompareExchange(reinterpret_cast<volatile long*>(pointer), static_cast<long>(value), static_cast<long>(expected))) == expected;
+    } else {
+        return static_cast<T>(_InterlockedCompareExchange64(reinterpret_cast<volatile __int64*>(pointer), static_cast<__int64>(value), static_cast<__int64>(expected))) == expected;
+    }
+#else
+    return __sync_bool_compare_and_swap(pointer, expected, value);
+#endif
+}
+
+static bool atomic_compare_write(Dynarmic::A64::Vector* pointer, Dynarmic::A64::Vector value, Dynarmic::A64::Vector expected) {
+#if defined(_MSC_VER)
+    return _InterlockedCompareExchange128(reinterpret_cast<volatile __int64*>(pointer), value[1], value[0], reinterpret_cast<__int64*>(expected.data())) != 0;
+#else
+    unsigned __int128 value_raw;
+    unsigned __int128 expected_raw;
+    std::memcpy(&value_raw, value.data(), sizeof(value_raw));
+    std::memcpy(&expected_raw, expected.data(), sizeof(expected_raw));
+    return __sync_bool_compare_and_swap(reinterpret_cast<unsigned __int128*>(pointer), expected_raw, value_raw);
+#endif
+}
+
 class DynarmicCallbacks64 final : public Dynarmic::A64::UserCallbacks {
 public:
     explicit DynarmicCallbacks64(khash_t(memory) *memory)
@@ -102,18 +135,22 @@ public:
     }
 
     void MemoryWrite8(u64 vaddr, u8 value) override {
+        if (watch_write_callbacks && unmapped_mem_callback && unmapped_mem_callback(vaddr, 1, value, unmapped_mem_user_data)) return;
         u8 *dest = (u8 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
         if(dest) { dest[0] = value; return; }
     }
     void MemoryWrite16(u64 vaddr, u16 value) override {
+        if (watch_write_callbacks && unmapped_mem_callback && unmapped_mem_callback(vaddr, 2, value, unmapped_mem_user_data)) return;
         u16 *dest = (u16 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
         if(dest) { dest[0] = value; return; }
     }
     void MemoryWrite32(u64 vaddr, u32 value) override {
+        if (watch_write_callbacks && unmapped_mem_callback && unmapped_mem_callback(vaddr, 4, value, unmapped_mem_user_data)) return;
         u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
         if(dest) { dest[0] = value; return; }
     }
     void MemoryWrite64(u64 vaddr, u64 value) override {
+        if (watch_write_callbacks && unmapped_mem_callback && unmapped_mem_callback(vaddr, 8, value, unmapped_mem_user_data)) return;
         u64 *dest = (u64 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
         if(dest) { dest[0] = value; return; }
     }
@@ -122,11 +159,11 @@ public:
         MemoryWrite64(vaddr + 8, value[1]);
     }
 
-    bool MemoryWriteExclusive8(u64 vaddr, std::uint8_t value, std::uint8_t expected) override { MemoryWrite8(vaddr, value); return true; }
-    bool MemoryWriteExclusive16(u64 vaddr, std::uint16_t value, std::uint16_t expected) override { MemoryWrite16(vaddr, value); return true; }
-    bool MemoryWriteExclusive32(u64 vaddr, std::uint32_t value, std::uint32_t expected) override { MemoryWrite32(vaddr, value); return true; }
-    bool MemoryWriteExclusive64(u64 vaddr, std::uint64_t value, std::uint64_t expected) override { MemoryWrite64(vaddr, value); return true; }
-    bool MemoryWriteExclusive128(u64 vaddr, Dynarmic::A64::Vector value, Dynarmic::A64::Vector expected) override { MemoryWrite128(vaddr, value); return true; }
+    bool MemoryWriteExclusive8(u64 vaddr, std::uint8_t value, std::uint8_t expected) override { auto* dest = static_cast<u8*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive16(u64 vaddr, std::uint16_t value, std::uint16_t expected) override { auto* dest = static_cast<u16*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive32(u64 vaddr, std::uint32_t value, std::uint32_t expected) override { auto* dest = static_cast<u32*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive64(u64 vaddr, std::uint64_t value, std::uint64_t expected) override { auto* dest = static_cast<u64*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive128(u64 vaddr, Dynarmic::A64::Vector value, Dynarmic::A64::Vector expected) override { auto* dest = static_cast<Dynarmic::A64::Vector*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
 
     void InterpreterFallback(u64 pc, std::size_t num_instructions) override { cpu->HaltExecution(); }
     void ExceptionRaised(u64 pc, Dynarmic::A64::Exception exception) override { 
@@ -139,8 +176,8 @@ public:
         cpu->HaltExecution();
     }
 
-    void AddTicks(u64 ticks) override {}
-    u64 GetTicksRemaining() override { return 0x10000000000ULL; }
+    void AddTicks(u64 ticks) override { ticks_remaining = ticks >= ticks_remaining ? 0 : ticks_remaining - ticks; }
+    u64 GetTicksRemaining() override { return ticks_remaining; }
     u64 GetCNTPCT() override { return nexium_get_cntpct(); }
 
     u64 tpidrro_el0 = 0;
@@ -148,11 +185,13 @@ public:
     khash_t(memory) *memory = nullptr;
     size_t num_page_table_entries = 0;
     void **page_table = nullptr;
+    bool watch_write_callbacks = false;
     Dynarmic::A64::Jit *cpu = nullptr;
     cb_call_svc svc_callback = nullptr;
     void* svc_user_data = nullptr;
     cb_mem_hook unmapped_mem_callback = nullptr;
     void* unmapped_mem_user_data = nullptr;
+    u64 ticks_remaining = 0x10000000000ULL;
 
     ~DynarmicCallbacks64() override = default;
 };
@@ -186,10 +225,10 @@ public:
     void MemoryWrite32(u32 vaddr, u32 value) override { u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table); if(dest) dest[0] = value; }
     void MemoryWrite64(u32 vaddr, u64 value) override { u64 *dest = (u64 *) get_memory(memory, vaddr, num_page_table_entries, page_table); if(dest) dest[0] = value; }
 
-    bool MemoryWriteExclusive8(u32 vaddr, std::uint8_t value, std::uint8_t expected) override { MemoryWrite8(vaddr, value); return true; }
-    bool MemoryWriteExclusive16(u32 vaddr, std::uint16_t value, std::uint16_t expected) override { MemoryWrite16(vaddr, value); return true; }
-    bool MemoryWriteExclusive32(u32 vaddr, std::uint32_t value, std::uint32_t expected) override { MemoryWrite32(vaddr, value); return true; }
-    bool MemoryWriteExclusive64(u32 vaddr, std::uint64_t value, std::uint64_t expected) override { MemoryWrite64(vaddr, value); return true; }
+    bool MemoryWriteExclusive8(u32 vaddr, std::uint8_t value, std::uint8_t expected) override { auto* dest = static_cast<u8*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive16(u32 vaddr, std::uint16_t value, std::uint16_t expected) override { auto* dest = static_cast<u16*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive32(u32 vaddr, std::uint32_t value, std::uint32_t expected) override { auto* dest = static_cast<u32*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
+    bool MemoryWriteExclusive64(u32 vaddr, std::uint64_t value, std::uint64_t expected) override { auto* dest = static_cast<u64*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
 
     void InterpreterFallback(u32 pc, std::size_t num_instructions) override { cpu->HaltExecution(); }
     void ExceptionRaised(u32 pc, Dynarmic::A32::Exception exception) override { 
@@ -202,8 +241,8 @@ public:
         cpu->HaltExecution();
     }
 
-    void AddTicks(u64 ticks) override {}
-    u64 GetTicksRemaining() override { return 0x10000000000ULL; }
+    void AddTicks(u64 ticks) override { ticks_remaining = ticks >= ticks_remaining ? 0 : ticks_remaining - ticks; }
+    u64 GetTicksRemaining() override { return ticks_remaining; }
 
     khash_t(memory) *memory = nullptr;
     size_t num_page_table_entries = 0;
@@ -215,6 +254,7 @@ public:
     void* unmapped_mem_user_data = nullptr;
     u32 tpidruro = 0;
     u32 tpidrurw = 0;
+    u64 ticks_remaining = 0x10000000000ULL;
 
     ~DynarmicCallbacks32() override = default;
 };
@@ -326,24 +366,21 @@ static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dyna
     config.code_cache_size = jit_size;
 
     if(unsafe_optimizations) {
-        // BISECT: UnfuseFMA confirmed safe. Testing UnfuseFMA+IgnoreGlobalMonitor.
-        // If visuals are identical to UnfuseFMA-only, both are safe and we bisect
-        // the FP trio next (ReducedErrorFP, InaccurateNaN, IgnoreStandardFPCRValue).
         config.unsafe_optimizations = true;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
     }
 
     backend->num_page_table_entries = 1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS);
     backend->page_table = page_table;
     callbacks->num_page_table_entries = backend->num_page_table_entries;
     callbacks->page_table = backend->page_table;
+    callbacks->watch_write_callbacks = std::getenv("NEXIUM_WATCH_PAGE_PROTECT") != nullptr;
 
     config.dczid_el0 = 4;
     config.ctr_el0 = 0x8444c004;
     config.cntfrq_el0 = 19200000;
     config.define_unpredictable_behaviour = true;
-    config.page_table = backend->page_table;
+    config.page_table = std::getenv("NEXIUM_WATCH_PAGE_PROTECT") ? nullptr : backend->page_table;
     config.page_table_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
     config.absolute_offset_page_table = true;
     config.detect_misaligned_access_via_page_table = 0;
@@ -357,7 +394,7 @@ static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dyna
     }
     config.recompile_on_fastmem_failure = true;
     config.recompile_on_exclusive_fastmem_failure = true;
-    config.enable_cycle_counting = false;
+    config.enable_cycle_counting = true;
     // FastDispatch and ReturnStackBuffer emit BL/RET dispatch paths that jump
     // directly to the next block without checking halt_reason. With cycle
     // counting disabled, these paths never return from emu_start when the
@@ -419,7 +456,7 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
     config.only_detect_misalignment_via_page_table_on_page_boundary = true;
     config.fastmem_pointer = std::nullopt;
     config.recompile_on_exclusive_fastmem_failure = true;
-    config.enable_cycle_counting = false;
+    config.enable_cycle_counting = true;
 
     for (int i = 0; i < 16; i++) {
         auto cp = std::make_shared<RustCoprocessor>(i, callbacks);
@@ -454,7 +491,6 @@ FQL void dynarmic_destroy(dynarmic *dynarmic) {
     if (dynarmic->cb64) delete dynarmic->cb64;
     if (dynarmic->jit32) delete dynarmic->jit32;
     if (dynarmic->cb32) delete dynarmic->cb32;
-    delete dynarmic->monitor;
     free(dynarmic);
 }
 
@@ -651,20 +687,25 @@ FQL int reg_write_c13_c0_3(dynarmic* d, u32 value) { if (d->cb32) d->cb32->tpidr
 FQL u32 reg_read_c13_c0_3(dynarmic* d) { return d->cb32 ? d->cb32->tpidruro : 0; }
 
 FQL int dynarmic_emu_start(dynarmic* d, u64 pc) {
-    if (d->jit64) { d->jit64->SetPC(pc); d->jit64->Run(); }
-    if (d->jit32) { reg_write_pc(d, pc); d->jit32->Run(); }
+    return dynarmic_emu_start_bounded(d, pc, 0x10000000000ULL);
+}
+FQL int dynarmic_emu_start_bounded(dynarmic* d, u64 pc, u64 ticks) {
+    if (d->cb64) d->cb64->ticks_remaining = ticks;
+    if (d->cb32) d->cb32->ticks_remaining = ticks;
+    if (d->jit64) { d->jit64->SetPC(pc); d->jit64->ClearExclusiveState(); d->jit64->Run(); }
+    if (d->jit32) { reg_write_pc(d, pc); d->jit32->ClearExclusiveState(); d->jit32->Run(); }
     return 0;
 }
 FQL int dynarmic_emu_stop(dynarmic* d) { if (d->jit64) d->jit64->HaltExecution(); if (d->jit32) d->jit32->HaltExecution(); return 0; }
 
-FQL t_context64 dynarmic_context_alloc() { return (t_context64) malloc(sizeof(struct context64)); } 
+FQL t_context64 dynarmic_context_alloc() { return (t_context64) calloc(1, sizeof(struct context64)); } 
 FQL void dynarmic_context_free(t_context64 context) { free(context); }
 FQL int dynarmic_context_restore(dynarmic* d, t_context64 context) {
     if (!context || !d->jit64) return -1;
     d->jit64->SetRegisters(context->registers); d->jit64->SetSP(context->sp); d->jit64->SetPC(context->pc);
     d->jit64->SetPstate(context->pstate); d->jit64->SetVectors(context->vectors);
     d->jit64->SetFpcr(context->fpcr); d->jit64->SetFpsr(context->fpsr);
-    d->jit64->SetTPIDR_EL0(context->tpidr_el0); d->jit64->SetTPIDRRO_EL0(context->tpidr_el0);
+    d->jit64->SetTPIDR_EL0(context->tpidr_el0); d->jit64->SetTPIDRRO_EL0(context->tpidrro_el0);
     return 0;
 }
 FQL int dynarmic_context_save(dynarmic* d, t_context64 context) {
