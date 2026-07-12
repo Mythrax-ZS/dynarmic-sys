@@ -483,6 +483,9 @@ endif()
 # Important: Use the current vendor dir as root for includes
 target_include_directories(dynarmic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(dynarmic PRIVATE ${DYNARMIC_CXX_FLAGS})
+if (NOT MSVC AND "x86_64" IN_LIST ARCHITECTURE)
+    target_compile_options(dynarmic PRIVATE -mcx16)
+endif()
 target_link_libraries(dynarmic PRIVATE Boost::boost fmt::fmt merry::mcl tsl::robin_map)
 
 if (DYNARMIC_ENABLE_CPU_FEATURE_DETECTION)
