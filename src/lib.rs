@@ -12,6 +12,28 @@ use std::sync::Arc;
 
 mod ffi;
 
+const SHARED_MONITOR_PROCS: u32 = 8;
+
+fn shared_exclusive_monitor() -> *mut c_void {
+    use std::sync::atomic::{AtomicPtr, Ordering};
+    static MONITOR: AtomicPtr<c_void> = AtomicPtr::new(null_mut());
+    let existing = MONITOR.load(Ordering::Acquire);
+    if !existing.is_null() {
+        return existing;
+    }
+    let created = unsafe { ffi::dynarmic_init_monitor(SHARED_MONITOR_PROCS) };
+    match MONITOR.compare_exchange(null_mut(), created, Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => created,
+        Err(winner) => winner,
+    }
+}
+
+fn next_processor_id() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed).min(SHARED_MONITOR_PROCS - 1)
+}
+
 pub type DynarmicContext = Arc<DynarmicContextInner>;
 
 #[derive(Clone)]
@@ -138,10 +160,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             jit_size = 512;
         }
 
-        let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
+        let monitor = shared_exclusive_monitor();
+        let processor_id = next_processor_id();
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
         let handle = unsafe {
-            ffi::dynarmic_new(0, memory, monitor, page_table, jit_size * 1024 * 1024, true)
+            ffi::dynarmic_new(processor_id, memory, monitor, page_table, jit_size * 1024 * 1024, true)
         };
 
         debug!(
@@ -190,10 +213,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             jit_size = 512;
         }
 
-        let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
+        let monitor = shared_exclusive_monitor();
+        let processor_id = next_processor_id();
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
         let handle = unsafe {
-            ffi::dynarmic_new_fm(0, memory, monitor, page_table, jit_size * 1024 * 1024, true, fastmem_base)
+            ffi::dynarmic_new_fm(processor_id, memory, monitor, page_table, jit_size * 1024 * 1024, true, fastmem_base)
         };
 
         debug!(
@@ -279,6 +303,10 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// * `pc`: The starting Program Counter address.
     /// * `until`: The address at which to stop execution.
     pub fn emu_start(&self, pc: u64, until: u64) -> anyhow::Result<()> {
+        self.emu_start_bounded(pc, until, 0x10000000000)
+    }
+
+    pub fn emu_start_bounded(&self, pc: u64, until: u64, ticks: u64) -> anyhow::Result<()> {
         unsafe {
             debug!("[Dynarmic] Starting emulator: pc=0x{:x}", pc);
 
@@ -286,7 +314,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             // "no synthetic stop" without overflowing.
             (*self.metadata.get()).until = until.saturating_add(4);
 
-            let ret = ffi::dynarmic_emu_start(self.cur_handle, pc);
+            let ret = ffi::dynarmic_emu_start_bounded(self.cur_handle, pc, ticks.max(1));
             if ret != 0 {
                 return Err(anyhow!("Failed to start emulator: code={}", ret));
             }

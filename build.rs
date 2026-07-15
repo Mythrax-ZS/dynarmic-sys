@@ -168,6 +168,8 @@ fn build_with_cmake() {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=vendor/dynarmic/dynarmic.cpp");
+    println!("cargo:rerun-if-changed=vendor/dynarmic/dynarmic.h");
     match pkg_config::Config::new()
         .atleast_version("2")
         .cargo_metadata(false)

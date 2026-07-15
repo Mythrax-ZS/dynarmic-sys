@@ -175,6 +175,8 @@ FQL u32 reg_read_c13_c0_3(dynarmic* dynarmic);
 
 FQL int dynarmic_emu_start(dynarmic* dynarmic, u64 pc);
 
+FQL int dynarmic_emu_start_bounded(dynarmic* dynarmic, u64 pc, u64 ticks);
+
 FQL int dynarmic_emu_stop(dynarmic* dynarmic);
 
 FQL t_context64 dynarmic_context_alloc();
