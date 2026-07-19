@@ -190,8 +190,9 @@ void ForceToDefaultNaN(BlockOfCode& code, FP::FPCR fpcr, Xbyak::Xmm result) {
     if (fpcr.DN()) {
         if (code.HasHostFeature(HostFeature::AVX512_OrthoFloat)) {
             const Xbyak::Opmask nan_mask = k1;
-            FCODE(vfpclassp)(nan_mask, result, u8(FpClass::QNaN | FpClass::SNaN));
-            FCODE(vblendmp)(result | nan_mask, result, GetNaNVector<fsize>(code));
+            const Xbyak::Xmm clean_result(result.getIdx());
+            FCODE(vfpclassp)(nan_mask, clean_result, u8(FpClass::QNaN | FpClass::SNaN));
+            FCODE(vblendmp)(clean_result | nan_mask, clean_result, GetNaNVector<fsize>(code));
         } else if (code.HasHostFeature(HostFeature::AVX)) {
             const Xbyak::Xmm nan_mask = xmm0;
             FCODE(vcmpunordp)(nan_mask, result, result);
