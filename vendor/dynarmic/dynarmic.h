@@ -121,6 +121,10 @@ FQL dynarmic* dynarmic_new_a32(
 );
 
 FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic);
+FQL u64 dynarmic_get_cache_capacity(dynarmic* dynarmic);
+FQL u64 dynarmic_get_cache_evacuation_count(dynarmic* dynarmic);
+FQL void dynarmic_invalidate_cache_range(dynarmic* dynarmic, u64 address, u64 size);
+FQL void dynarmic_clear_cache(dynarmic* dynarmic);
 
 FQL void dynarmic_destroy(dynarmic *dynarmic);
 
@@ -176,6 +180,10 @@ FQL u32 reg_read_c13_c0_3(dynarmic* dynarmic);
 FQL int dynarmic_emu_start(dynarmic* dynarmic, u64 pc);
 
 FQL int dynarmic_emu_start_bounded(dynarmic* dynarmic, u64 pc, u64 ticks);
+FQL bool dynarmic_guarded_fast_paths_enabled(void);
+FQL bool dynarmic_code_page_cache_enabled(void);
+FQL bool dynarmic_unsafe_fastmem_enabled(void);
+FQL u64 dynarmic_emu_ticks_remaining(const dynarmic* dynarmic);
 
 FQL int dynarmic_emu_stop(dynarmic* dynarmic);
 

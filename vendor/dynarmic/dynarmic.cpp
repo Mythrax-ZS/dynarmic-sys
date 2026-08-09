@@ -65,6 +65,51 @@ static inline void *get_memory(khash_t(memory) *memory, u64 vaddr, size_t num_pa
     return page ? &page[vaddr & DYN_PAGE_MASK] : nullptr;
 }
 
+static bool env_value_is_true(const char* value) {
+    return value != nullptr &&
+           (std::strcmp(value, "1") == 0 ||
+            std::strcmp(value, "true") == 0 ||
+            std::strcmp(value, "TRUE") == 0 ||
+            std::strcmp(value, "on") == 0 ||
+            std::strcmp(value, "ON") == 0 ||
+            std::strcmp(value, "yes") == 0 ||
+            std::strcmp(value, "YES") == 0);
+}
+
+static bool env_value_is_false(const char* value) {
+    return value != nullptr &&
+           (std::strcmp(value, "0") == 0 ||
+            std::strcmp(value, "false") == 0 ||
+            std::strcmp(value, "FALSE") == 0 ||
+            std::strcmp(value, "off") == 0 ||
+            std::strcmp(value, "OFF") == 0 ||
+            std::strcmp(value, "no") == 0 ||
+            std::strcmp(value, "NO") == 0);
+}
+
+static bool guarded_fast_paths_enabled() {
+#if defined(__x86_64__) || defined(_M_X64)
+    static const bool enabled = [] {
+        return env_value_is_true(std::getenv("DYNARMIC_FAST_PATHS"));
+    }();
+    return enabled;
+#else
+    return false;
+#endif
+}
+
+static bool code_page_cache_enabled() {
+    static const bool enabled =
+            !env_value_is_false(std::getenv("DYNARMIC_CODE_PAGE_CACHE"));
+    return enabled;
+}
+
+static bool unsafe_fastmem_enabled() {
+    static const bool enabled =
+            env_value_is_true(std::getenv("NEXIUM_DYNARMIC_UNSAFE_FASTMEM"));
+    return enabled;
+}
+
 template<typename T>
 static bool atomic_compare_write(T* pointer, T value, T expected) {
 #if defined(_MSC_VER)
@@ -101,9 +146,41 @@ public:
 
     bool IsReadOnlyMemory(u64 vaddr) override { return false; }
     std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override {
-        u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+        if (!code_page_cache_enabled()) {
+            u32 *dest = (u32 *) get_memory(memory, vaddr, num_page_table_entries, page_table);
+            if (dest) return *dest;
+            return std::nullopt;
+        }
+
+        const u64 page_address = vaddr & ~DYN_PAGE_MASK;
+        if (cached_code_page_address != page_address) {
+            cached_code_page = get_memory_page(memory, page_address, num_page_table_entries, page_table);
+            cached_code_page_address = page_address;
+        }
+        const u32 *dest = cached_code_page
+                ? reinterpret_cast<const u32*>(&cached_code_page[vaddr & DYN_PAGE_MASK])
+                : nullptr;
         if (dest) return *dest;
         return std::nullopt;
+    }
+
+    void InvalidateCodePageCacheRange(u64 address, u64 size) {
+        if (cached_code_page_address == INVALID_CODE_PAGE || size == 0) {
+            return;
+        }
+        const u64 first_page = address & ~DYN_PAGE_MASK;
+        const u64 last_address = size - 1 > UINT64_MAX - address
+                ? UINT64_MAX
+                : address + size - 1;
+        const u64 last_page = last_address & ~DYN_PAGE_MASK;
+        if (cached_code_page_address >= first_page && cached_code_page_address <= last_page) {
+            ClearCodePageCache();
+        }
+    }
+
+    void ClearCodePageCache() {
+        cached_code_page_address = INVALID_CODE_PAGE;
+        cached_code_page = nullptr;
     }
 
     u8 MemoryRead8(u64 vaddr) override {
@@ -166,9 +243,27 @@ public:
     bool MemoryWriteExclusive128(u64 vaddr, Dynarmic::A64::Vector value, Dynarmic::A64::Vector expected) override { auto* dest = static_cast<Dynarmic::A64::Vector*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
 
     void InterpreterFallback(u64 pc, std::size_t num_instructions) override { cpu->HaltExecution(); }
-    void ExceptionRaised(u64 pc, Dynarmic::A64::Exception exception) override { 
+    void ExceptionRaised(u64 pc, Dynarmic::A64::Exception exception) override {
         if (exception == Dynarmic::A64::Exception::Yield) return;
         cpu->SetPC(pc); cpu->HaltExecution();
+    }
+
+    void InstructionCacheOperationRaised(Dynarmic::A64::InstructionCacheOperation op,
+                                         u64 value) override {
+        switch (op) {
+        case Dynarmic::A64::InstructionCacheOperation::InvalidateByVAToPoU: {
+            constexpr u64 ICACHE_LINE_SIZE = 64;
+            const u64 cache_line_start = value & ~(ICACHE_LINE_SIZE - 1);
+            InvalidateCodePageCacheRange(cache_line_start, ICACHE_LINE_SIZE);
+            cpu->InvalidateCacheRange(cache_line_start, ICACHE_LINE_SIZE);
+            break;
+        }
+        case Dynarmic::A64::InstructionCacheOperation::InvalidateAllToPoU:
+        case Dynarmic::A64::InstructionCacheOperation::InvalidateAllToPoUInnerSharable:
+            ClearCodePageCache();
+            cpu->ClearCache();
+            break;
+        }
     }
 
     void CallSVC(u32 swi) override {
@@ -192,6 +287,10 @@ public:
     cb_mem_hook unmapped_mem_callback = nullptr;
     void* unmapped_mem_user_data = nullptr;
     u64 ticks_remaining = 0x10000000000ULL;
+
+    static constexpr u64 INVALID_CODE_PAGE = UINT64_MAX;
+    u64 cached_code_page_address = INVALID_CODE_PAGE;
+    char* cached_code_page = nullptr;
 
     ~DynarmicCallbacks64() override = default;
 };
@@ -388,20 +487,19 @@ static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dyna
     config.fastmem_pointer = std::nullopt;
     if (fastmem_base) {
         config.fastmem_pointer = reinterpret_cast<uintptr_t>(fastmem_base);
-        config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
+        config.fastmem_address_space_bits = unsafe_fastmem_enabled()
+                ? 64
+                : PAGE_TABLE_ADDRESS_SPACE_BITS;
         config.silently_mirror_fastmem = true;
         config.fastmem_exclusive_access = true;
     }
     config.recompile_on_fastmem_failure = true;
     config.recompile_on_exclusive_fastmem_failure = true;
     config.enable_cycle_counting = true;
-    // FastDispatch and ReturnStackBuffer emit BL/RET dispatch paths that jump
-    // directly to the next block without checking halt_reason. With cycle
-    // counting disabled, these paths never return from emu_start when the
-    // watchdog fires HaltExecution(). Disable both so all block transitions
-    // fall through to the dispatcher loop, which does check halt_reason.
-    config.optimizations &= ~(Dynarmic::OptimizationFlag::FastDispatch |
-                               Dynarmic::OptimizationFlag::ReturnStackBuffer);
+    if (!guarded_fast_paths_enabled()) {
+        config.optimizations &= ~(Dynarmic::OptimizationFlag::FastDispatch |
+                                  Dynarmic::OptimizationFlag::ReturnStackBuffer);
+    }
 
     backend->cb64 = callbacks;
     backend->jit64 = new Dynarmic::A64::Jit(config);
@@ -476,6 +574,31 @@ FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic) {
     return 0;
 }
 
+FQL u64 dynarmic_get_cache_capacity(dynarmic* dynarmic) {
+    if (dynarmic->jit64) return dynarmic->jit64->GetCacheCapacity();
+    return 0;
+}
+
+FQL u64 dynarmic_get_cache_evacuation_count(dynarmic* dynarmic) {
+    if (dynarmic->jit64) return dynarmic->jit64->GetCacheEvacuationCount();
+    return 0;
+}
+
+FQL void dynarmic_invalidate_cache_range(dynarmic* dynarmic, u64 address, u64 size) {
+    if (size == 0) return;
+    if (dynarmic->cb64) dynarmic->cb64->InvalidateCodePageCacheRange(address, size);
+    if (dynarmic->jit64) dynarmic->jit64->InvalidateCacheRange(address, static_cast<size_t>(size));
+    if (dynarmic->jit32) {
+        dynarmic->jit32->InvalidateCacheRange(static_cast<u32>(address), static_cast<size_t>(size));
+    }
+}
+
+FQL void dynarmic_clear_cache(dynarmic* dynarmic) {
+    if (dynarmic->cb64) dynarmic->cb64->ClearCodePageCache();
+    if (dynarmic->jit64) dynarmic->jit64->ClearCache();
+    if (dynarmic->jit32) dynarmic->jit32->ClearCache();
+}
+
 FQL void dynarmic_destroy(dynarmic *dynarmic) {
     if (!dynarmic) return;
     khash_t(memory) *memory = dynarmic->memory;
@@ -505,6 +628,7 @@ FQL void dynarmic_set_unmapped_mem_callback(dynarmic *dynarmic, cb_mem_hook cb, 
 }
 
 FQL int dynarmic_munmap(dynarmic* dynarmic, u64 address, u64 size) {
+    if (dynarmic->cb64) dynarmic->cb64->InvalidateCodePageCacheRange(address, size);
     khash_t(memory) *memory = dynarmic->memory;
     for(u64 vaddr = address; vaddr < address + size; vaddr += DYN_PAGE_SIZE) {
         u64 idx = vaddr >> DYN_PAGE_BITS;
@@ -537,6 +661,7 @@ FQL int dynarmic_mmap(dynarmic* dynarmic, u64 address, u64 size, int perms) {
         page->addr = current_ptr; page->perms = perms; page->is_external = false; kh_value(memory, k) = page;
         current_ptr += DYN_PAGE_SIZE;
     }
+    if (dynarmic->cb64) dynarmic->cb64->InvalidateCodePageCacheRange(address, size);
     return 0;
 }
 
@@ -553,6 +678,7 @@ FQL int dynarmic_mem_map_ptr(dynarmic* dynarmic, u64 address, u64 size, int perm
         page->addr = current_ptr; page->perms = perms; page->is_external = true; kh_value(memory, k) = page;
         current_ptr += DYN_PAGE_SIZE;
     }
+    if (dynarmic->cb64) dynarmic->cb64->InvalidateCodePageCacheRange(address, size);
     return 0;
 }
 
@@ -694,6 +820,14 @@ FQL int dynarmic_emu_start_bounded(dynarmic* d, u64 pc, u64 ticks) {
     if (d->cb32) d->cb32->ticks_remaining = ticks;
     if (d->jit64) { d->jit64->SetPC(pc); d->jit64->ClearExclusiveState(); d->jit64->Run(); }
     if (d->jit32) { reg_write_pc(d, pc); d->jit32->ClearExclusiveState(); d->jit32->Run(); }
+    return 0;
+}
+FQL bool dynarmic_guarded_fast_paths_enabled() { return guarded_fast_paths_enabled(); }
+FQL bool dynarmic_code_page_cache_enabled() { return code_page_cache_enabled(); }
+FQL bool dynarmic_unsafe_fastmem_enabled() { return unsafe_fastmem_enabled(); }
+FQL u64 dynarmic_emu_ticks_remaining(const dynarmic* d) {
+    if (d->cb64) return d->cb64->ticks_remaining;
+    if (d->cb32) return d->cb32->ticks_remaining;
     return 0;
 }
 FQL int dynarmic_emu_stop(dynarmic* d) { if (d->jit64) d->jit64->HaltExecution(); if (d->jit32) d->jit32->HaltExecution(); return 0; }

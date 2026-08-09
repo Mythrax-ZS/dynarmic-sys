@@ -180,10 +180,20 @@ void A64EmitX64::GenTerminalHandlers() {
         code.or_(rbx, rcx);
     };
 
+    const auto check_halt_and_cycles = [this] {
+        code.cmp(dword[r15 + offsetof(A64JitState, halt_reason)], 0);
+        code.jne(code.GetForceReturnFromRunCodeAddress());
+        if (conf.enable_cycle_counting) {
+            code.cmp(qword[rsp + ABI_SHADOW_SPACE + offsetof(StackLayout, cycles_remaining)], 0);
+            code.jng(code.GetForceReturnFromRunCodeAddress());
+        }
+    };
+
     Xbyak::Label fast_dispatch_cache_miss, rsb_cache_miss;
 
     code.align();
     terminal_handler_pop_rsb_hint = code.getCurr<const void*>();
+    check_halt_and_cycles();
     calculate_location_descriptor();
     code.mov(eax, dword[r15 + offsetof(A64JitState, rsb_ptr)]);
     code.sub(eax, 1);
@@ -202,6 +212,7 @@ void A64EmitX64::GenTerminalHandlers() {
     if (conf.HasOptimization(OptimizationFlag::FastDispatch)) {
         code.align();
         terminal_handler_fast_dispatch_hint = code.getCurr<const void*>();
+        check_halt_and_cycles();
         calculate_location_descriptor();
         code.L(rsb_cache_miss);
         code.mov(r12, reinterpret_cast<u64>(fast_dispatch_table.data()));
@@ -218,6 +229,7 @@ void A64EmitX64::GenTerminalHandlers() {
         code.mov(qword[rbp + offsetof(FastDispatchEntry, location_descriptor)], rbx);
         code.LookupBlock();
         code.mov(ptr[rbp + offsetof(FastDispatchEntry, code_ptr)], rax);
+        check_halt_and_cycles();
         code.jmp(rax);
         PerfMapRegister(terminal_handler_fast_dispatch_hint, code.getCurr(), "a64_terminal_handler_fast_dispatch_hint");
 

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: 0BSD
  */
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -280,6 +281,7 @@ private:
         constexpr size_t MINIMUM_REMAINING_CODESIZE = 1 * 1024 * 1024;
         if (block_of_code.SpaceRemaining() < MINIMUM_REMAINING_CODESIZE) {
             // Immediately evacuate cache
+            cache_evacuation_count.fetch_add(1, std::memory_order_relaxed);
             invalidate_entire_cache = true;
             PerformRequestedCacheInvalidation(HaltReason::CacheInvalidation);
         }
@@ -341,6 +343,7 @@ public:
     bool invalidate_entire_cache = false;
     boost::icl::interval_set<u64> invalid_cache_ranges;
     std::mutex invalidation_mutex;
+    std::atomic<u64> cache_evacuation_count{0};
 };
 
 Jit::Jit(UserConfig conf)
@@ -360,6 +363,14 @@ HaltReason Jit::Step() {
 
 uint64_t Jit::GetCacheSize() const {
     return impl->block_of_code.getSize();
+}
+
+uint64_t Jit::GetCacheCapacity() const {
+    return impl->conf.code_cache_size;
+}
+
+uint64_t Jit::GetCacheEvacuationCount() const {
+    return impl->cache_evacuation_count.load(std::memory_order_relaxed);
 }
 
 void Jit::ClearCache() {

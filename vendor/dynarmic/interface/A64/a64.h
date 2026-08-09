@@ -37,6 +37,10 @@ public:
 
     uint64_t GetCacheSize() const;
 
+    uint64_t GetCacheCapacity() const;
+
+    uint64_t GetCacheEvacuationCount() const;
+
     /**
      * Clears the code cache of all compiled code.
      * Can be called at any time. Halts execution if called within a callback.
