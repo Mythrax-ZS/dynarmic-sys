@@ -52,6 +52,14 @@ extern "C" {
 
     pub fn dynarmic_get_cache_size(dynarmic: *mut c_void) -> u64;
 
+    pub fn dynarmic_get_cache_capacity(dynarmic: *mut c_void) -> u64;
+
+    pub fn dynarmic_get_cache_evacuation_count(dynarmic: *mut c_void) -> u64;
+
+    pub fn dynarmic_invalidate_cache_range(dynarmic: *mut c_void, address: u64, size: u64);
+
+    pub fn dynarmic_clear_cache(dynarmic: *mut c_void);
+
     pub fn dynarmic_destroy(dynarmic: *mut c_void);
 
     pub fn dynarmic_set_svc_callback(
@@ -134,6 +142,14 @@ extern "C" {
     pub fn dynarmic_emu_start(dynarmic: *mut c_void, pc: u64) -> i32;
 
     pub fn dynarmic_emu_start_bounded(dynarmic: *mut c_void, pc: u64, ticks: u64) -> i32;
+
+    pub fn dynarmic_guarded_fast_paths_enabled() -> bool;
+
+    pub fn dynarmic_code_page_cache_enabled() -> bool;
+
+    pub fn dynarmic_unsafe_fastmem_enabled() -> bool;
+
+    pub fn dynarmic_emu_ticks_remaining(dynarmic: *mut c_void) -> u64;
 
     pub fn dynarmic_emu_stop(dynarmic: *mut c_void) -> i32;
 

@@ -8,9 +8,125 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::process::exit;
 use std::ptr::null_mut;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 mod ffi;
+
+pub fn guarded_fast_paths_enabled() -> bool {
+    unsafe { ffi::dynarmic_guarded_fast_paths_enabled() }
+}
+
+pub fn code_page_cache_enabled() -> bool {
+    unsafe { ffi::dynarmic_code_page_cache_enabled() }
+}
+
+pub fn unsafe_fastmem_enabled() -> bool {
+    unsafe { ffi::dynarmic_unsafe_fastmem_enabled() }
+}
+
+#[cfg(test)]
+fn parse_default_on_flag(value: Option<&str>) -> bool {
+    !value.is_some_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "0" | "false" | "off" | "no"
+        )
+    })
+}
+
+pub fn shared_fastmem_page_table_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("NEXIUM_DYNARMIC_SHARED_PAGE_TABLE")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "on" | "yes"
+                )
+            })
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum FastmemPageTableRoute {
+    InitializedShared,
+    ReusedShared,
+    PrivateForDifferentBase,
+}
+
+#[derive(Default)]
+struct FastmemPageTableSlot {
+    base: Option<usize>,
+    table: usize,
+}
+
+impl FastmemPageTableSlot {
+    fn get_or_allocate(
+        &mut self,
+        base: usize,
+        allocate: impl FnOnce() -> usize,
+    ) -> (usize, FastmemPageTableRoute) {
+        match self.base {
+            Some(shared_base) if shared_base == base => {
+                (self.table, FastmemPageTableRoute::ReusedShared)
+            }
+            Some(_) => (allocate(), FastmemPageTableRoute::PrivateForDifferentBase),
+            None => {
+                let table = allocate();
+                if table != 0 {
+                    self.base = Some(base);
+                    self.table = table;
+                }
+                (table, FastmemPageTableRoute::InitializedShared)
+            }
+        }
+    }
+}
+
+fn page_table_for_fastmem(fastmem_base: *mut c_void) -> *mut *mut c_void {
+    use std::sync::Once;
+    static MODE_LOG: Once = Once::new();
+    if !shared_fastmem_page_table_enabled() {
+        MODE_LOG.call_once(|| {
+            log::info!(
+                "[Dynarmic] Fastmem page-table mode: private (NEXIUM_DYNARMIC_SHARED_PAGE_TABLE=0)"
+            );
+        });
+        return unsafe { ffi::dynarmic_init_page_table() };
+    }
+    MODE_LOG.call_once(|| {
+        log::info!("[Dynarmic] Fastmem page-table mode: process-shared by arena base");
+    });
+
+    static SLOT: OnceLock<Mutex<FastmemPageTableSlot>> = OnceLock::new();
+    let mut slot = SLOT
+        .get_or_init(|| Mutex::new(FastmemPageTableSlot::default()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (table, route) = slot.get_or_allocate(fastmem_base as usize, || unsafe {
+        ffi::dynarmic_init_page_table() as usize
+    });
+
+    match route {
+        FastmemPageTableRoute::InitializedShared => debug!(
+            "[Dynarmic] Initialized shared fastmem page table for base={:X}",
+            fastmem_base as usize
+        ),
+        FastmemPageTableRoute::ReusedShared => debug!(
+            "[Dynarmic] Reusing shared fastmem page table for base={:X}",
+            fastmem_base as usize
+        ),
+        FastmemPageTableRoute::PrivateForDifferentBase => warn!(
+            "[Dynarmic] Fastmem base {:X} differs from the process-shared arena; using a private page table",
+            fastmem_base as usize
+        ),
+    }
+    if table == 0 {
+        error!("[Dynarmic] Failed to initialize fastmem page table");
+    }
+    table as *mut *mut c_void
+}
 
 const SHARED_MONITOR_PROCS: u32 = 8;
 
@@ -31,7 +147,8 @@ fn shared_exclusive_monitor() -> *mut c_void {
 fn next_processor_id() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(0);
-    NEXT.fetch_add(1, Ordering::Relaxed).min(SHARED_MONITOR_PROCS - 1)
+    NEXT.fetch_add(1, Ordering::Relaxed)
+        .min(SHARED_MONITOR_PROCS - 1)
 }
 
 pub type DynarmicContext = Arc<DynarmicContextInner>;
@@ -164,7 +281,14 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         let processor_id = next_processor_id();
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
         let handle = unsafe {
-            ffi::dynarmic_new(processor_id, memory, monitor, page_table, jit_size * 1024 * 1024, true)
+            ffi::dynarmic_new(
+                processor_id,
+                memory,
+                monitor,
+                page_table,
+                jit_size * 1024 * 1024,
+                true,
+            )
         };
 
         debug!(
@@ -215,9 +339,17 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
 
         let monitor = shared_exclusive_monitor();
         let processor_id = next_processor_id();
-        let page_table = unsafe { ffi::dynarmic_init_page_table() };
+        let page_table = page_table_for_fastmem(fastmem_base);
         let handle = unsafe {
-            ffi::dynarmic_new_fm(processor_id, memory, monitor, page_table, jit_size * 1024 * 1024, true, fastmem_base)
+            ffi::dynarmic_new_fm(
+                processor_id,
+                memory,
+                monitor,
+                page_table,
+                jit_size * 1024 * 1024,
+                true,
+                fastmem_base,
+            )
         };
 
         debug!(
@@ -322,6 +454,10 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         }
     }
 
+    pub fn emu_ticks_remaining(&self) -> u64 {
+        unsafe { ffi::dynarmic_emu_ticks_remaining(self.cur_handle) }
+    }
+
     /// Stops the emulation.
     pub fn emu_stop(&self) -> anyhow::Result<()> {
         unsafe {
@@ -337,6 +473,22 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// Returns the current size of the JIT code cache.
     pub fn get_cache_size(&self) -> u64 {
         unsafe { ffi::dynarmic_get_cache_size(self.cur_handle) }
+    }
+
+    pub fn get_cache_capacity(&self) -> u64 {
+        unsafe { ffi::dynarmic_get_cache_capacity(self.cur_handle) }
+    }
+
+    pub fn get_cache_evacuation_count(&self) -> u64 {
+        unsafe { ffi::dynarmic_get_cache_evacuation_count(self.cur_handle) }
+    }
+
+    pub fn invalidate_cache_range(&self, address: u64, size: u64) {
+        unsafe { ffi::dynarmic_invalidate_cache_range(self.cur_handle, address, size) }
+    }
+
+    pub fn clear_cache(&self) {
+        unsafe { ffi::dynarmic_clear_cache(self.cur_handle) }
     }
 
     /// Allocates a new ARM64 context.
@@ -746,8 +898,10 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
-            extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(swi: u32, user_data: *const c_void)
-            where
+            extern "C" fn svc_callback_wrapper<T: Clone + Send + Sync, F>(
+                swi: u32,
+                user_data: *const c_void,
+            ) where
                 F: FnMut(&Dynarmic<T>, u32, u64, u64),
             {
                 if swi == 114514 {
@@ -836,5 +990,234 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             let callback = (*self.metadata.get()).unmapped_mem_callback.take();
             drop(callback);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        code_page_cache_enabled, guarded_fast_paths_enabled, parse_default_on_flag,
+        shared_fastmem_page_table_enabled, unsafe_fastmem_enabled, Dynarmic, FastmemPageTableRoute,
+        FastmemPageTableSlot,
+    };
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    const CODE_ADDR: u64 = 0x0100_0000;
+    const MAP_SIZE: usize = 0x1000;
+    const LONG_BUDGET: u64 = 1_000_000_000_000;
+
+    fn emulator_with_code(code: &[u8]) -> Dynarmic<'static, ()> {
+        let emu: Dynarmic<'static, ()> = Dynarmic::new();
+        emu.mem_map(CODE_ADDR, MAP_SIZE, 7).expect("map test code");
+        emu.mem_write(CODE_ADDR, code).expect("write test code");
+        emu
+    }
+
+    #[test]
+    fn fast_path_switch_matches_environment() {
+        let expected = std::env::var("DYNARMIC_FAST_PATHS")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "on" | "yes"
+                )
+            });
+        assert_eq!(guarded_fast_paths_enabled(), expected);
+    }
+
+    #[test]
+    fn parity_switches_match_environment() {
+        let code_cache_expected =
+            parse_default_on_flag(std::env::var("DYNARMIC_CODE_PAGE_CACHE").ok().as_deref());
+        let unsafe_fastmem_expected = std::env::var("NEXIUM_DYNARMIC_UNSAFE_FASTMEM")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "on" | "yes"
+                )
+            });
+        let shared_page_table_expected = std::env::var("NEXIUM_DYNARMIC_SHARED_PAGE_TABLE")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "on" | "yes"
+                )
+            });
+        assert_eq!(code_page_cache_enabled(), code_cache_expected);
+        assert_eq!(unsafe_fastmem_enabled(), unsafe_fastmem_expected);
+        assert_eq!(
+            shared_fastmem_page_table_enabled(),
+            shared_page_table_expected
+        );
+    }
+
+    #[test]
+    fn shared_page_table_slot_reuses_only_the_same_base() {
+        let mut slot = FastmemPageTableSlot::default();
+        let (first, first_route) = slot.get_or_allocate(0x1000, || 0xaaaa);
+        let (same, same_route) = slot.get_or_allocate(0x1000, || panic!("must reuse"));
+        let (different, different_route) = slot.get_or_allocate(0x2000, || 0xbbbb);
+
+        assert_eq!(first, 0xaaaa);
+        assert_eq!(first_route, FastmemPageTableRoute::InitializedShared);
+        assert_eq!(same, first);
+        assert_eq!(same_route, FastmemPageTableRoute::ReusedShared);
+        assert_eq!(different, 0xbbbb);
+        assert_eq!(
+            different_route,
+            FastmemPageTableRoute::PrivateForDifferentBase
+        );
+    }
+
+    #[test]
+    fn code_fetch_tracks_remap_and_explicit_invalidation() {
+        fn svc_instruction(immediate: u16) -> [u8; 4] {
+            (0xd400_0001u32 | (u32::from(immediate) << 5)).to_le_bytes()
+        }
+
+        let emu: Dynarmic<'static, ()> = Dynarmic::new();
+        let mut first_page = vec![0u8; MAP_SIZE];
+        first_page[..4].copy_from_slice(&svc_instruction(1));
+        emu.mem_map_ptr(CODE_ADDR, MAP_SIZE, 7, first_page.as_mut_ptr().cast())
+            .expect("map first host code page");
+
+        let (svc_tx, svc_rx) = mpsc::channel();
+        emu.set_svc_callback(move |dynarmic, immediate, _, _| {
+            svc_tx.send(immediate).expect("report SVC");
+            dynarmic.emu_stop().expect("stop at SVC");
+        });
+
+        emu.emu_start_bounded(CODE_ADDR, u64::MAX - 16, 64)
+            .expect("execute first host page");
+        assert_eq!(svc_rx.recv().expect("first SVC"), 1);
+
+        emu.mem_unmap(CODE_ADDR, MAP_SIZE)
+            .expect("unmap first host page");
+        let mut second_page = vec![0u8; MAP_SIZE];
+        second_page[4..8].copy_from_slice(&svc_instruction(2));
+        emu.mem_map_ptr(CODE_ADDR, MAP_SIZE, 7, second_page.as_mut_ptr().cast())
+            .expect("map replacement host code page");
+
+        emu.emu_start_bounded(CODE_ADDR + 4, u64::MAX - 16, 64)
+            .expect("execute replacement host page");
+        assert_eq!(svc_rx.recv().expect("replacement SVC"), 2);
+
+        second_page[4..8].copy_from_slice(&svc_instruction(3));
+        emu.invalidate_cache_range(CODE_ADDR + 4, 4);
+        emu.emu_start_bounded(CODE_ADDR + 4, u64::MAX - 16, 64)
+            .expect("execute range-invalidated code");
+        assert_eq!(svc_rx.recv().expect("range-invalidated SVC"), 3);
+
+        second_page[4..8].copy_from_slice(&svc_instruction(4));
+        emu.clear_cache();
+        emu.emu_start_bounded(CODE_ADDR + 4, u64::MAX - 16, 64)
+            .expect("execute full-cache-invalidated code");
+        assert_eq!(svc_rx.recv().expect("full-cache-invalidated SVC"), 4);
+
+        assert!(emu.get_cache_capacity() >= 8 * 1024 * 1024);
+        assert_eq!(emu.get_cache_evacuation_count(), 0);
+    }
+
+    fn install_run_marker(emu: &Dynarmic<'static, ()>) -> mpsc::Receiver<()> {
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        emu.set_svc_callback(move |_, _, _, _| {
+            entered_tx.send(()).expect("announce guest entry");
+        });
+        entered_rx
+    }
+
+    fn assert_external_stop_returns(
+        emu: &Dynarmic<'static, ()>,
+        run_pc: u64,
+        entered_rx: mpsc::Receiver<()>,
+    ) {
+        let runner = emu.clone();
+        let (done_tx, done_rx) = mpsc::sync_channel(0);
+        let handle = std::thread::spawn(move || {
+            let result = runner.emu_start_bounded(run_pc, u64::MAX - 16, LONG_BUDGET);
+            let remaining = runner.emu_ticks_remaining();
+            done_tx
+                .send((result, remaining))
+                .expect("report runner completion");
+        });
+
+        entered_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("guest did not reach the run marker");
+        std::thread::sleep(Duration::from_millis(25));
+        let stop_at = Instant::now();
+        emu.emu_stop().expect("request external stop");
+        let (result, remaining) = done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("fast-path execution ignored HaltExecution");
+        result.expect("bounded execution failed");
+        assert!(
+            stop_at.elapsed() < Duration::from_secs(2),
+            "external halt exceeded its bounded latency"
+        );
+        assert!(
+            remaining > 0,
+            "external halt consumed the entire long budget"
+        );
+        handle.join().expect("runner thread panicked");
+    }
+
+    #[test]
+    fn fast_dispatch_honors_budget_and_external_halt() {
+        let code = [
+            0x01, 0x00, 0x00, 0xd4, 0x21, 0x04, 0x00, 0x91, 0x00, 0x00, 0x1f, 0xd6,
+        ];
+        let emu = emulator_with_code(&code);
+        let loop_pc = CODE_ADDR + 4;
+        emu.reg_write_raw(0, loop_pc).expect("set indirect target");
+
+        const BUDGET: u64 = 64;
+        emu.emu_start_bounded(loop_pc, u64::MAX - 16, BUDGET)
+            .expect("run bounded fast-dispatch loop");
+        assert_eq!(
+            emu.emu_ticks_remaining(),
+            0,
+            "fast dispatch returned before exhausting the small budget"
+        );
+        assert!(
+            (1..=BUDGET).contains(&emu.reg_read(1).expect("read loop counter")),
+            "fast dispatch grossly exceeded the bounded budget"
+        );
+
+        emu.reg_write_raw(1, 0).expect("reset loop counter");
+        let entered_rx = install_run_marker(&emu);
+        assert_external_stop_returns(&emu, CODE_ADDR, entered_rx);
+    }
+
+    #[test]
+    fn return_stack_buffer_honors_external_halt() {
+        let code = [
+            0x01, 0x00, 0x00, 0xd4, 0x02, 0x00, 0x00, 0x94, 0xff, 0xff, 0xff, 0x17, 0x21, 0x04,
+            0x00, 0x91, 0xc0, 0x03, 0x5f, 0xd6,
+        ];
+        let emu = emulator_with_code(&code);
+        let entered_rx = install_run_marker(&emu);
+        assert_external_stop_returns(&emu, CODE_ADDR, entered_rx);
+    }
+
+    #[test]
+    fn ticks_remaining_reports_early_svc_exit() {
+        let emu = emulator_with_code(&[0x01, 0x00, 0x00, 0xd4]);
+        emu.set_svc_callback(|dynarmic, _, _, _| {
+            dynarmic.emu_stop().expect("stop from SVC callback");
+        });
+
+        const BUDGET: u64 = 10_000;
+        emu.emu_start_bounded(CODE_ADDR, u64::MAX - 16, BUDGET)
+            .expect("run SVC");
+        let remaining = emu.emu_ticks_remaining();
+        assert!(
+            remaining > 0 && remaining < BUDGET,
+            "early SVC exit did not preserve an exact remaining budget: {remaining}"
+        );
     }
 }

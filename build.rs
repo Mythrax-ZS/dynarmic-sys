@@ -158,8 +158,8 @@ fn build_with_cmake() {
         }
         let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
         let cxx_runtime = match target_os.as_str() {
-            "macos" | "ios" | "tvos" | "watchos"
-            | "freebsd" | "dragonfly" | "openbsd" | "netbsd" => "c++",
+            "macos" | "ios" | "tvos" | "watchos" | "freebsd" | "dragonfly" | "openbsd"
+            | "netbsd" => "c++",
             "android" => "c++_shared",
             _ => "stdc++",
         };
@@ -170,6 +170,9 @@ fn build_with_cmake() {
 fn main() {
     println!("cargo:rerun-if-changed=vendor/dynarmic/dynarmic.cpp");
     println!("cargo:rerun-if-changed=vendor/dynarmic/dynarmic.h");
+    println!("cargo:rerun-if-changed=vendor/dynarmic/backend/x64/a64_emit_x64.cpp");
+    println!("cargo:rerun-if-changed=vendor/dynarmic/backend/x64/a64_interface.cpp");
+    println!("cargo:rerun-if-changed=vendor/dynarmic/interface/A64/a64.h");
     match pkg_config::Config::new()
         .atleast_version("2")
         .cargo_metadata(false)
@@ -191,8 +194,8 @@ fn main() {
 
             let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
             let cxx_runtime = match target_os.as_str() {
-                "macos" | "ios" | "tvos" | "watchos"
-                | "freebsd" | "dragonfly" | "openbsd" | "netbsd" => "c++",
+                "macos" | "ios" | "tvos" | "watchos" | "freebsd" | "dragonfly" | "openbsd"
+                | "netbsd" => "c++",
                 "android" => "c++_shared",
                 _ => "stdc++",
             };
