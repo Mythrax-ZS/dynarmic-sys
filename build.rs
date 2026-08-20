@@ -3,6 +3,10 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
+fn target_is_x86_64() -> bool {
+    env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64")
+}
+
 fn ninja_available() -> bool {
     Command::new("ninja").arg("--version").spawn().is_ok()
 }
@@ -83,6 +87,14 @@ fn build_with_cmake() {
         config.generator("Ninja");
     }
 
+    if let Ok(boost_root) = env::var("BOOST_ROOT") {
+        config.define("Boost_INCLUDE_DIR", boost_root.replace('\\', "/"));
+    }
+
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        config.cxxflag("-DFMT_CONSTEVAL=");
+    }
+
     let dst = config
         .no_build_target(true)
         .define("BUILD_TESTING", "OFF")
@@ -143,20 +155,22 @@ fn build_with_cmake() {
         // surface as LNK2001/LNK2019 unresolved externals at link time.
         println!("cargo:rustc-link-lib=static=fmt");
         println!("cargo:rustc-link-lib=static=mcl");
-        if cfg!(target_arch = "x86_64") {
+        if target_is_x86_64() {
             println!("cargo:rustc-link-lib=static=Zycore");
             println!("cargo:rustc-link-lib=static=Zydis");
         }
     } else {
-        println!("cargo:rustc-link-lib=pthread");
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        if target_os != "android" {
+            println!("cargo:rustc-link-lib=pthread");
+        }
         println!("cargo:rustc-link-lib=m");
         println!("cargo:rustc-link-lib=static=fmt");
         println!("cargo:rustc-link-lib=static=mcl");
-        if cfg!(target_arch = "x86_64") {
+        if target_is_x86_64() {
             println!("cargo:rustc-link-lib=static=Zycore");
             println!("cargo:rustc-link-lib=static=Zydis");
         }
-        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
         let cxx_runtime = match target_os.as_str() {
             "macos" | "ios" | "tvos" | "watchos" | "freebsd" | "dragonfly" | "openbsd"
             | "netbsd" => "c++",
@@ -188,7 +202,7 @@ fn main() {
             println!("cargo:rustc-link-lib=static=fmt");
             println!("cargo:rustc-link-lib=m");
 
-            if cfg!(target_arch = "x86_64") {
+            if target_is_x86_64() {
                 println!("cargo:rustc-link-lib=Zydis");
             }
 
