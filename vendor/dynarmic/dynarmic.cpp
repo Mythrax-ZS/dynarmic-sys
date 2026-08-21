@@ -446,7 +446,7 @@ FQL void** dynarmic_init_page_table() {
     return (page_table == MAP_FAILED) ? nullptr : page_table;
 }
 
-static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, void* fastmem_base) {
+static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, void* fastmem_base, u32 fastmem_bits) {
     auto backend = (t_dynarmic) malloc(sizeof(struct dynarmic));
     memset(backend, 0, sizeof(struct dynarmic));
     backend->memory = memory;
@@ -487,10 +487,11 @@ static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dyna
     config.fastmem_pointer = std::nullopt;
     if (fastmem_base) {
         config.fastmem_pointer = reinterpret_cast<uintptr_t>(fastmem_base);
-        config.fastmem_address_space_bits = unsafe_fastmem_enabled()
-                ? 64
-                : PAGE_TABLE_ADDRESS_SPACE_BITS;
-        config.silently_mirror_fastmem = true;
+        u32 bits = fastmem_bits;
+        if (bits < 12 || bits > 64) bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
+        if (unsafe_fastmem_enabled()) bits = 64;
+        config.fastmem_address_space_bits = bits;
+        config.silently_mirror_fastmem = (bits >= 64);
         config.fastmem_exclusive_access = true;
     }
     config.recompile_on_fastmem_failure = true;
@@ -508,11 +509,15 @@ static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dyna
 }
 
 FQL dynarmic* dynarmic_new(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations) {
-    return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, nullptr);
+    return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, nullptr, PAGE_TABLE_ADDRESS_SPACE_BITS);
 }
 
 FQL dynarmic* dynarmic_new_fm(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, void* fastmem_base) {
-    return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, fastmem_base);
+    return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, fastmem_base, PAGE_TABLE_ADDRESS_SPACE_BITS);
+}
+
+FQL dynarmic* dynarmic_new_fm2(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, void* fastmem_base, u32 fastmem_bits) {
+    return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, fastmem_base, fastmem_bits);
 }
 
 FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers) {

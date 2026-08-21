@@ -110,6 +110,17 @@ FQL dynarmic* dynarmic_new_fm(
         void* fastmem_base
 );
 
+FQL dynarmic* dynarmic_new_fm2(
+        u32 process_id,
+        khash_t(memory) *memory,
+        Dynarmic::ExclusiveMonitor *monitor,
+        void **page_table,
+        u64 jit_size,
+        bool unsafe_optimizations,
+        void* fastmem_base,
+        u32 fastmem_bits
+);
+
 FQL dynarmic* dynarmic_new_a32(
         u32 process_id,
         khash_t(memory) *memory,

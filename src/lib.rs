@@ -318,6 +318,17 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
     /// guest pages committed at `fastmem_base + guest_va`. Guest loads/stores compile
     /// to direct host accesses; faults fall back to the memory callbacks.
     pub fn new_fastmem(fastmem_base: *mut std::ffi::c_void) -> Dynarmic<'static, T> {
+        Self::new_fastmem_bits(fastmem_base, 0)
+    }
+
+    /// `fastmem_bits` declares the arena width; the reservation at `fastmem_base`
+    /// must cover the whole `1 << fastmem_bits`. Values outside 12..=64 fall back to
+    /// the historical default. Out-of-range guest accesses take the memory callbacks
+    /// rather than wrapping into the arena.
+    pub fn new_fastmem_bits(
+        fastmem_base: *mut std::ffi::c_void,
+        fastmem_bits: u32,
+    ) -> Dynarmic<'static, T> {
         let memory = unsafe { ffi::dynarmic_init_memory() };
         if memory == null_mut() {
             error!("Failed to initialize memory");
@@ -341,7 +352,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         let processor_id = next_processor_id();
         let page_table = page_table_for_fastmem(fastmem_base);
         let handle = unsafe {
-            ffi::dynarmic_new_fm(
+            ffi::dynarmic_new_fm2(
                 processor_id,
                 memory,
                 monitor,
@@ -349,6 +360,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 jit_size * 1024 * 1024,
                 true,
                 fastmem_base,
+                fastmem_bits,
             )
         };
 

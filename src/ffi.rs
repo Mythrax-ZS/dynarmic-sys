@@ -40,6 +40,17 @@ extern "C" {
         fastmem_base: *mut c_void,
     ) -> *mut c_void;
 
+    pub fn dynarmic_new_fm2(
+        process_id: u32,
+        memory: *mut c_void,
+        monitor: *mut c_void,
+        page_table: *mut *mut c_void,
+        jit_size: u64,
+        unsafe_optimizations: bool,
+        fastmem_base: *mut c_void,
+        fastmem_bits: u32,
+    ) -> *mut c_void;
+
     pub fn dynarmic_new_a32(
         process_id: u32,
         memory: *mut c_void,
