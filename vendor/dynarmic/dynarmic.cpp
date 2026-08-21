@@ -570,17 +570,23 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
 }
 
 FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic) {
+#if defined(__x86_64__) || defined(_M_X64)
     if (dynarmic->jit64) return dynarmic->jit64->GetCacheSize();
+#endif
     return 0;
 }
 
 FQL u64 dynarmic_get_cache_capacity(dynarmic* dynarmic) {
+#if defined(__x86_64__) || defined(_M_X64)
     if (dynarmic->jit64) return dynarmic->jit64->GetCacheCapacity();
+#endif
     return 0;
 }
 
 FQL u64 dynarmic_get_cache_evacuation_count(dynarmic* dynarmic) {
+#if defined(__x86_64__) || defined(_M_X64)
     if (dynarmic->jit64) return dynarmic->jit64->GetCacheEvacuationCount();
+#endif
     return 0;
 }
 

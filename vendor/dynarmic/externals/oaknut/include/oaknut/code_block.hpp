@@ -44,6 +44,10 @@ public:
         m_memory = (std::uint32_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
 #endif
 
+#if !defined(_WIN32)
+        if (m_memory == MAP_FAILED)
+            m_memory = nullptr;
+#endif
         if (m_memory == nullptr)
             throw std::bad_alloc{};
     }
