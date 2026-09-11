@@ -244,7 +244,16 @@ public:
 
     void InterpreterFallback(u64 pc, std::size_t num_instructions) override { cpu->HaltExecution(); }
     void ExceptionRaised(u64 pc, Dynarmic::A64::Exception exception) override {
-        if (exception == Dynarmic::A64::Exception::Yield) return;
+        switch (exception) {
+        case Dynarmic::A64::Exception::WaitForInterrupt:
+        case Dynarmic::A64::Exception::WaitForEvent:
+        case Dynarmic::A64::Exception::SendEvent:
+        case Dynarmic::A64::Exception::SendEventLocal:
+        case Dynarmic::A64::Exception::Yield:
+            return;
+        default:
+            break;
+        }
         cpu->SetPC(pc); cpu->HaltExecution();
     }
 

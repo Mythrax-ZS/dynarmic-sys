@@ -1086,6 +1086,36 @@ mod tests {
     }
 
     #[test]
+    fn a64_hints_advance_to_arithmetic_and_svc() {
+        for (name, hint) in [
+            ("WFE", 0xd503_205fu32),
+            ("WFI", 0xd503_207f),
+            ("SEV", 0xd503_209f),
+            ("SEVL", 0xd503_20bf),
+            ("YIELD", 0xd503_203f),
+        ] {
+            let code: Vec<u8> = [hint, 0x9100_1c00, 0xd400_0381]
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect();
+            let emu = emulator_with_code(&code);
+            emu.reg_write_raw(0, 35).expect("set arithmetic input");
+            let (svc_tx, svc_rx) = mpsc::channel();
+            emu.set_svc_callback(move |dynarmic, immediate, _, _| {
+                svc_tx.send(immediate).expect("report SVC");
+                dynarmic.emu_stop().expect("stop at SVC");
+            });
+
+            emu.emu_start_bounded(CODE_ADDR, u64::MAX - 16, 64)
+                .expect("execute hint and continuation");
+
+            assert_eq!(svc_rx.try_recv(), Ok(0x1c), "{name} did not reach SVC");
+            assert_eq!(emu.reg_read(0).expect("read result"), 42, "{name}");
+            assert_eq!(emu.reg_read_pc().expect("read PC"), CODE_ADDR + 12, "{name}");
+        }
+    }
+
+    #[test]
     fn code_fetch_tracks_remap_and_explicit_invalidation() {
         fn svc_instruction(immediate: u16) -> [u8; 4] {
             (0xd400_0001u32 | (u32::from(immediate) << 5)).to_le_bytes()
