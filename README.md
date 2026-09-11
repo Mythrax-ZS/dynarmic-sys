@@ -30,14 +30,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-dynarmic-sys-mythrax = "0.2"
+dynarmic-sys-mythrax = "0.3.4"
 ```
 
 If you want to drop-in replace upstream `dynarmic-sys` without code changes, alias it:
 
 ```toml
 [dependencies]
-dynarmic-sys = { package = "dynarmic-sys-mythrax", version = "0.2" }
+dynarmic-sys = { package = "dynarmic-sys-mythrax", version = "0.3.4" }
 ```
 
 ## Build requirements
