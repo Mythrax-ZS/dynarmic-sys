@@ -206,6 +206,8 @@ FQL bool dynarmic_guarded_fast_paths_enabled(void);
 FQL bool dynarmic_code_page_cache_enabled(void);
 FQL bool dynarmic_unsafe_fastmem_enabled(void);
 FQL u64 dynarmic_emu_ticks_remaining(const dynarmic* dynarmic);
+FQL u32 dynarmic_take_exception(dynarmic* dynarmic, u32* out_pc);
+FQL u64 dynarmic_host_cntpct(void);
 
 FQL int dynarmic_emu_stop(dynarmic* dynarmic);
 

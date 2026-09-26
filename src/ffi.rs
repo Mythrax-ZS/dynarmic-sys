@@ -187,6 +187,10 @@ extern "C" {
 
     pub fn dynarmic_unsafe_fastmem_enabled() -> bool;
 
+    pub fn dynarmic_take_exception(dynarmic: *mut c_void, out_pc: *mut u32) -> u32;
+
+    pub fn dynarmic_host_cntpct() -> u64;
+
     pub fn dynarmic_emu_ticks_remaining(dynarmic: *mut c_void) -> u64;
 
     pub fn dynarmic_emu_stop(dynarmic: *mut c_void) -> i32;

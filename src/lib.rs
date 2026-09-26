@@ -14,6 +14,10 @@ mod ffi;
 
 pub use ffi::CoprocessorHandler;
 
+pub fn host_cntpct() -> u64 {
+    unsafe { ffi::dynarmic_host_cntpct() }
+}
+
 pub fn guarded_fast_paths_enabled() -> bool {
     unsafe { ffi::dynarmic_guarded_fast_paths_enabled() }
 }
@@ -528,6 +532,12 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
 
     pub fn emu_ticks_remaining(&self) -> u64 {
         unsafe { ffi::dynarmic_emu_ticks_remaining(self.cur_handle) }
+    }
+
+    pub fn take_exception(&self) -> Option<(u32, u32)> {
+        let mut pc = 0u32;
+        let code = unsafe { ffi::dynarmic_take_exception(self.cur_handle, &mut pc) };
+        (code != 0).then_some((code, pc))
     }
 
     /// Stops the emulation.

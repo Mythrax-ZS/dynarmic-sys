@@ -339,8 +339,9 @@ public:
     bool MemoryWriteExclusive64(u32 vaddr, std::uint64_t value, std::uint64_t expected) override { auto* dest = static_cast<u64*>(get_memory(memory, vaddr, num_page_table_entries, page_table)); return dest && atomic_compare_write(dest, value, expected); }
 
     void InterpreterFallback(u32 pc, std::size_t num_instructions) override { cpu->HaltExecution(); }
-    void ExceptionRaised(u32 pc, Dynarmic::A32::Exception exception) override { 
+    void ExceptionRaised(u32 pc, Dynarmic::A32::Exception exception) override {
         if (exception == Dynarmic::A32::Exception::Yield) return;
+        last_exception = static_cast<u32>(exception) + 1; last_exception_pc = pc;
         cpu->Regs()[15] = pc; cpu->HaltExecution();
     }
 
@@ -363,6 +364,8 @@ public:
     u32 tpidruro = 0;
     u32 tpidrurw = 0;
     u64 ticks_remaining = 0x10000000000ULL;
+    u32 last_exception = 0;
+    u32 last_exception_pc = 0;
 
     ~DynarmicCallbacks32() override = default;
 };
@@ -867,6 +870,16 @@ FQL int dynarmic_emu_start_bounded(dynarmic* d, u64 pc, u64 ticks) {
 FQL bool dynarmic_guarded_fast_paths_enabled() { return guarded_fast_paths_enabled(); }
 FQL bool dynarmic_code_page_cache_enabled() { return code_page_cache_enabled(); }
 FQL bool dynarmic_unsafe_fastmem_enabled() { return unsafe_fastmem_enabled(); }
+FQL u32 dynarmic_take_exception(dynarmic* d, u32* out_pc) {
+    if (d->cb32 && d->cb32->last_exception) {
+        u32 code = d->cb32->last_exception;
+        if (out_pc) *out_pc = d->cb32->last_exception_pc;
+        d->cb32->last_exception = 0;
+        return code;
+    }
+    return 0;
+}
+FQL u64 dynarmic_host_cntpct() { return nexium_get_cntpct(); }
 FQL u64 dynarmic_emu_ticks_remaining(const dynarmic* d) {
     if (d->cb64) return d->cb64->ticks_remaining;
     if (d->cb32) return d->cb32->ticks_remaining;
