@@ -797,7 +797,9 @@ FQL int reg_write(dynarmic* d, u64 index, u64 value) {
     }
     if (d->jit32) {
         if (index >= 1 && index <= 15) d->jit32->Regs()[index-1] = (u32)value; 
-        else if (index == 16) reg_write_pc(d, value); 
+        else if (index == 16) reg_write_pc(d, value);
+        else if (index == 30) d->jit32->Regs()[14] = (u32)value;
+        else if (index == 31) d->jit32->Regs()[13] = (u32)value;
         else if (index == 17) d->jit32->SetCpsr((u32)value); 
         else if (index == 18) d->cb32->tpidruro = (u32)value;
         else if (index == 19) d->cb32->tpidrurw = (u32)value;
@@ -816,7 +818,9 @@ FQL u64 reg_read(dynarmic* d, u64 index) {
     }
     if (d->jit32) {
         if (index >= 1 && index <= 15) return d->jit32->Regs()[index-1]; 
-        if (index == 16) return reg_read_pc(d); 
+        if (index == 16) return reg_read_pc(d);
+        if (index == 30) return d->jit32->Regs()[14];
+        if (index == 31) return d->jit32->Regs()[13];
         if (index == 17) return d->jit32->Cpsr(); 
         if (index == 18) return d->cb32->tpidruro;
         if (index == 19) return d->cb32->tpidrurw;
@@ -871,18 +875,20 @@ FQL int dynarmic_context_save(dynarmic* d, t_context64 context) {
     return 0;
 }
 
-FQL t_context32 dynarmic_context32_alloc() { return (t_context32) malloc(sizeof(struct context32)); } 
+FQL t_context32 dynarmic_context32_alloc() { return (t_context32) calloc(1, sizeof(struct context32)); }
 FQL void dynarmic_context32_free(t_context32 context) { free(context); }
 FQL int dynarmic_context32_restore(dynarmic* d, t_context32 context) {
     if (!context || !d->jit32) return -1;
     d->jit32->Regs() = context->registers; d->jit32->SetCpsr(context->cpsr);
     d->jit32->ExtRegs() = context->ext_regs; d->jit32->SetFpscr(context->fpscr);
+    if (d->cb32) { d->cb32->tpidrurw = context->tpidrurw; d->cb32->tpidruro = context->tpidruro; }
     return 0;
 }
 FQL int dynarmic_context32_save(dynarmic* d, t_context32 context) {
     if (!context || !d->jit32) return -1;
     context->registers = d->jit32->Regs(); context->cpsr = d->jit32->Cpsr();
     context->ext_regs = d->jit32->ExtRegs(); context->fpscr = d->jit32->Fpscr();
+    if (d->cb32) { context->tpidrurw = d->cb32->tpidrurw; context->tpidruro = d->cb32->tpidruro; }
     return 0;
 }
 
