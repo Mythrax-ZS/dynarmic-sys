@@ -131,6 +131,17 @@ FQL dynarmic* dynarmic_new_a32(
         coprocessor_handler* handlers
 );
 
+FQL dynarmic* dynarmic_new_a32_fm2(
+        u32 process_id,
+        khash_t(memory) *memory,
+        Dynarmic::ExclusiveMonitor *monitor,
+        void **page_table,
+        u64 jit_size,
+        bool unsafe_optimizations,
+        coprocessor_handler* handlers,
+        void* fastmem_base
+);
+
 FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic);
 FQL u64 dynarmic_get_cache_capacity(dynarmic* dynarmic);
 FQL u64 dynarmic_get_cache_evacuation_count(dynarmic* dynarmic);

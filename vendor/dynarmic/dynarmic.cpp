@@ -529,7 +529,7 @@ FQL dynarmic* dynarmic_new_fm2(u32 process_id, khash_t(memory) *memory, Dynarmic
     return dynarmic_new_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, fastmem_base, fastmem_bits);
 }
 
-FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers) {
+static dynarmic* dynarmic_new_a32_impl(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers, void* fastmem_base, bool full_unsafe) {
     auto backend = (t_dynarmic) malloc(sizeof(struct dynarmic));
     memset(backend, 0, sizeof(struct dynarmic));
     backend->memory = memory;
@@ -544,16 +544,17 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
     config.global_monitor = backend->monitor;
     config.wall_clock_cntpct = true;
     config.code_cache_size = jit_size;
-    config.arch_version = Dynarmic::A32::ArchVersion::v7;
+    config.arch_version = Dynarmic::A32::ArchVersion::v8;
 
     if(unsafe_optimizations) {
         config.unsafe_optimizations = true;
-        // Updated By Mythrax: full set of Unsafe_* flags (matches A64 path).
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
+        if (full_unsafe) {
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_ReducedErrorFP;
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
+        }
     }
 
     backend->num_page_table_entries = 1ULL << (32 - DYN_PAGE_BITS);
@@ -567,8 +568,17 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
     config.detect_misaligned_access_via_page_table = 0;
     config.only_detect_misalignment_via_page_table_on_page_boundary = true;
     config.fastmem_pointer = std::nullopt;
+    if (fastmem_base) {
+        config.fastmem_pointer = reinterpret_cast<uintptr_t>(fastmem_base);
+        config.fastmem_exclusive_access = true;
+    }
+    config.recompile_on_fastmem_failure = true;
     config.recompile_on_exclusive_fastmem_failure = true;
     config.enable_cycle_counting = true;
+    if (!guarded_fast_paths_enabled()) {
+        config.optimizations &= ~(Dynarmic::OptimizationFlag::FastDispatch |
+                                  Dynarmic::OptimizationFlag::ReturnStackBuffer);
+    }
 
     for (int i = 0; i < 16; i++) {
         auto cp = std::make_shared<RustCoprocessor>(i, callbacks);
@@ -581,6 +591,14 @@ FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic
     backend->jit32 = new Dynarmic::A32::Jit(config);
     callbacks->cpu = backend->jit32;
     return backend;
+}
+
+FQL dynarmic* dynarmic_new_a32(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers) {
+    return dynarmic_new_a32_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, handlers, nullptr, true);
+}
+
+FQL dynarmic* dynarmic_new_a32_fm2(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers, void* fastmem_base) {
+    return dynarmic_new_a32_impl(process_id, memory, monitor, page_table, jit_size, unsafe_optimizations, handlers, fastmem_base, false);
 }
 
 FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic) {

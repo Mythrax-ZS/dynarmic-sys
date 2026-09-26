@@ -1,7 +1,23 @@
 use crate::Dynarmic;
-use std::ffi::{c_char, c_void};
+use std::ffi::{c_char, c_uint, c_void};
 
 pub trait SFHook {}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CoprocessorHandler {
+    pub user_data: *mut c_void,
+    pub send_one_word: Option<
+        unsafe extern "C" fn(*mut c_void, bool, c_uint, c_uint, c_uint, c_uint, u32),
+    >,
+    pub send_two_words: Option<unsafe extern "C" fn(*mut c_void, bool, c_uint, c_uint, u32, u32)>,
+    pub get_one_word:
+        Option<unsafe extern "C" fn(*mut c_void, bool, c_uint, c_uint, c_uint, c_uint) -> u32>,
+    pub get_two_words: Option<unsafe extern "C" fn(*mut c_void, bool, c_uint, c_uint) -> u64>,
+}
+
+unsafe impl Send for CoprocessorHandler {}
+unsafe impl Sync for CoprocessorHandler {}
 
 pub struct DyHook<'a, T: Clone + Send + Sync, F> {
     pub callback: F,
@@ -59,6 +75,17 @@ extern "C" {
         jit_size: u64,
         unsafe_optimizations: bool,
         coprocessors: *const c_void,
+    ) -> *mut c_void;
+
+    pub fn dynarmic_new_a32_fm2(
+        process_id: u32,
+        memory: *mut c_void,
+        monitor: *mut c_void,
+        page_table: *mut *mut c_void,
+        jit_size: u64,
+        unsafe_optimizations: bool,
+        coprocessors: *const CoprocessorHandler,
+        fastmem_base: *mut c_void,
     ) -> *mut c_void;
 
     pub fn dynarmic_get_cache_size(dynarmic: *mut c_void) -> u64;

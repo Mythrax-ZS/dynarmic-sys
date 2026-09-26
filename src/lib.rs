@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 mod ffi;
 
+pub use ffi::CoprocessorHandler;
+
 pub fn guarded_fast_paths_enabled() -> bool {
     unsafe { ffi::dynarmic_guarded_fast_paths_enabled() }
 }
@@ -427,6 +429,64 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             handle as usize, jit_size
         );
 
+        Dynarmic {
+            cur_handle: handle,
+            metadata: Arc::new(UnsafeCell::new(Metadata {
+                svc_callback: None,
+                unmapped_mem_callback: None,
+                until: 0,
+                _memory: memory,
+                _monitor: monitor,
+                _page_table: page_table,
+                handle,
+            })),
+            pd: PhantomData,
+        }
+    }
+
+    pub fn new_a32_fastmem_bits(
+        fastmem_base: *mut std::ffi::c_void,
+        handlers: Option<&[CoprocessorHandler; 16]>,
+    ) -> Dynarmic<'static, T> {
+        let memory = unsafe { ffi::dynarmic_init_memory() };
+        if memory == null_mut() {
+            error!("Failed to initialize memory");
+            exit(0)
+        }
+        let mut jit_size = std::env::var("DYNARMIC_JIT_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(64);
+        if jit_size < 8 {
+            warn!("JIT size {}MB is too small, setting to 8MB", jit_size);
+            jit_size = 8;
+        } else if jit_size > 512 {
+            warn!("JIT size {}MB is too large, setting to 512MB", jit_size);
+            jit_size = 512;
+        }
+        let monitor = shared_exclusive_monitor();
+        let processor_id = next_processor_id();
+        let page_table = if fastmem_base.is_null() {
+            unsafe { ffi::dynarmic_init_page_table() }
+        } else {
+            page_table_for_fastmem(fastmem_base)
+        };
+        let handle = unsafe {
+            ffi::dynarmic_new_a32_fm2(
+                processor_id,
+                memory,
+                monitor,
+                page_table,
+                jit_size * 1024 * 1024,
+                true,
+                handlers.map_or(std::ptr::null(), |h| h.as_ptr()),
+                fastmem_base,
+            )
+        };
+        debug!(
+            "[Dynarmic] Created A32 Dynarmic instance: {:X} base={:X} with {}MB JIT",
+            handle as usize, fastmem_base as usize, jit_size
+        );
         Dynarmic {
             cur_handle: handle,
             metadata: Arc::new(UnsafeCell::new(Metadata {
