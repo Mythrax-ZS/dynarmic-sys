@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::process::exit;
 use std::ptr::null_mut;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 mod ffi;
 
@@ -292,6 +292,22 @@ impl Drop for Metadata<'_> {
 
 unsafe impl Send for Metadata<'_> {}
 unsafe impl Sync for Metadata<'_> {}
+
+pub(crate) struct WeakDynarmic<'a, T: Clone + Send + Sync> {
+    cur_handle: *mut c_void,
+    metadata: Weak<UnsafeCell<Metadata<'a>>>,
+    pd: PhantomData<&'a T>,
+}
+
+impl<'a, T: Clone + Send + Sync> WeakDynarmic<'a, T> {
+    fn upgrade(&self) -> Option<Dynarmic<'a, T>> {
+        self.metadata.upgrade().map(|metadata| Dynarmic {
+            cur_handle: self.cur_handle,
+            metadata,
+            pd: PhantomData,
+        })
+    }
+}
 
 /// A high-level wrapper around the Dynarmic ARM dynamic recompiler.
 ///
@@ -1026,6 +1042,14 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         }
     }
 
+    fn downgrade(&self) -> WeakDynarmic<'a, T> {
+        WeakDynarmic {
+            cur_handle: self.cur_handle,
+            metadata: Arc::downgrade(&self.metadata),
+            pd: PhantomData,
+        }
+    }
+
     /// Sets a callback for SVC (Supervisor Call) instructions.
     ///
     /// The callback receives the emulator instance, the SWI number, the end address, and the current PC.
@@ -1037,7 +1061,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         unsafe {
             let mut cb = Box::new(DyHook {
                 callback,
-                dy: self.clone(),
+                dy: self.downgrade(),
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
@@ -1052,10 +1076,12 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 }
                 unsafe {
                     let cb = &mut *(user_data as *mut DyHook<T, F>);
-                    let dynarmic = &cb.dy;
+                    let Some(dynarmic) = cb.dy.upgrade() else {
+                        return;
+                    };
                     let pc = ffi::reg_read_pc(dynarmic.cur_handle);
                     let until = (*dynarmic.metadata.get()).until;
-                    (cb.callback)(dynarmic, swi, until, pc);
+                    (cb.callback)(&dynarmic, swi, until, pc);
                 }
             }
 
@@ -1079,7 +1105,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         unsafe {
             let mut cb = Box::new(DyHook {
                 callback,
-                dy: self.clone(),
+                dy: self.downgrade(),
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
 
@@ -1094,8 +1120,10 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
             {
                 unsafe {
                     let cb = &mut *(user_data as *mut DyHook<T, F>);
-                    let dynarmic = &cb.dy;
-                    (cb.callback)(dynarmic, addr, size, value)
+                    let Some(dynarmic) = cb.dy.upgrade() else {
+                        return false;
+                    };
+                    (cb.callback)(&dynarmic, addr, size, value)
                 }
             }
 
@@ -1143,7 +1171,7 @@ mod tests {
         shared_fastmem_page_table_enabled, unsafe_fastmem_enabled, Dynarmic, FastmemPageTableRoute,
         FastmemPageTableSlot, ProcessorSlots,
     };
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Arc};
     use std::time::{Duration, Instant};
 
     const CODE_ADDR: u64 = 0x0100_0000;
@@ -1390,6 +1418,51 @@ mod tests {
         let emu = emulator_with_code(&code);
         let entered_rx = install_run_marker(&emu);
         assert_external_stop_returns(&emu, CODE_ADDR, entered_rx);
+    }
+
+    #[test]
+    fn callbacks_do_not_keep_the_instance_alive() {
+        let emu = emulator_with_code(&[0x01, 0x00, 0x00, 0xd4]);
+        let (svc_tx, svc_rx) = mpsc::channel();
+        emu.set_svc_callback(move |dynarmic, immediate, _, _| {
+            svc_tx.send(immediate).expect("report SVC");
+            dynarmic.emu_stop().expect("stop at SVC");
+        });
+        emu.set_unmapped_mem_callback(|_, _, _, _| false);
+        let clone = emu.clone();
+        clone
+            .emu_start_bounded(CODE_ADDR, u64::MAX - 16, 64)
+            .expect("run SVC");
+        assert_eq!(svc_rx.recv().expect("SVC"), 0);
+        assert_eq!(Arc::strong_count(&emu.metadata), 2);
+        let metadata = Arc::downgrade(&emu.metadata);
+        drop(clone);
+        assert_eq!(Arc::strong_count(&emu.metadata), 1);
+        drop(emu);
+        assert!(metadata.upgrade().is_none());
+    }
+
+    #[test]
+    fn a32_instance_with_private_monitor_is_released() {
+        let code: Vec<u8> = [0xe3a0_002au32, 0xef00_0000]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        let emu: Dynarmic<'static, ()> = Dynarmic::new_a32();
+        emu.mem_map(CODE_ADDR, MAP_SIZE, 7).expect("map A32 code");
+        emu.mem_write(CODE_ADDR, &code).expect("write A32 code");
+        let (svc_tx, svc_rx) = mpsc::channel();
+        emu.set_svc_callback(move |dynarmic, immediate, _, _| {
+            svc_tx.send(immediate).expect("report SVC");
+            dynarmic.emu_stop().expect("stop at SVC");
+        });
+        emu.emu_start_bounded(CODE_ADDR, u64::MAX - 16, 64)
+            .expect("run A32 SVC");
+        assert_eq!(svc_rx.recv().expect("A32 SVC"), 0);
+        assert_eq!(emu.reg_read_r(0).expect("read r0"), 42);
+        let metadata = Arc::downgrade(&emu.metadata);
+        drop(emu);
+        assert!(metadata.upgrade().is_none());
     }
 
     #[test]

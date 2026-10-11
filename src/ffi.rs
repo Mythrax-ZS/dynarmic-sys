@@ -1,4 +1,4 @@
-use crate::Dynarmic;
+use crate::WeakDynarmic;
 use std::ffi::{c_char, c_uint, c_void};
 
 pub trait SFHook {}
@@ -21,7 +21,7 @@ unsafe impl Sync for CoprocessorHandler {}
 
 pub struct DyHook<'a, T: Clone + Send + Sync, F> {
     pub callback: F,
-    pub dy: Dynarmic<'a, T>,
+    pub dy: WeakDynarmic<'a, T>,
 }
 
 impl<'a, T: Clone + Send + Sync, F> SFHook for DyHook<'a, T, F> {}
