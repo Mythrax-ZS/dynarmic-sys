@@ -448,6 +448,10 @@ FQL Dynarmic::ExclusiveMonitor *dynarmic_init_monitor(u32 processor_count) {
     return new Dynarmic::ExclusiveMonitor(processor_count);
 }
 
+FQL void dynarmic_free_monitor(Dynarmic::ExclusiveMonitor *monitor) {
+    delete monitor;
+}
+
 FQL void** dynarmic_init_page_table() {
     size_t size = (1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS)) * sizeof(void *);
 #ifdef MAP_NORESERVE
@@ -458,9 +462,12 @@ FQL void** dynarmic_init_page_table() {
     return (page_table == MAP_FAILED) ? nullptr : page_table;
 }
 
+FQL void dynarmic_free_page_table(void** page_table) {
+    if (page_table) munmap(page_table, (1ULL << (PAGE_TABLE_ADDRESS_SPACE_BITS - DYN_PAGE_BITS)) * sizeof(void *));
+}
+
 static dynarmic* dynarmic_new_impl(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, void* fastmem_base, u32 fastmem_bits) {
-    auto backend = (t_dynarmic) malloc(sizeof(struct dynarmic));
-    memset(backend, 0, sizeof(struct dynarmic));
+    auto backend = new dynarmic{};
     backend->memory = memory;
     backend->monitor = monitor;
     backend->cb32 = nullptr;
@@ -533,8 +540,7 @@ FQL dynarmic* dynarmic_new_fm2(u32 process_id, khash_t(memory) *memory, Dynarmic
 }
 
 static dynarmic* dynarmic_new_a32_impl(u32 process_id, khash_t(memory) *memory, Dynarmic::ExclusiveMonitor *monitor, void **page_table, uint64_t jit_size, bool unsafe_optimizations, coprocessor_handler* handlers, void* fastmem_base, bool full_unsafe) {
-    auto backend = (t_dynarmic) malloc(sizeof(struct dynarmic));
-    memset(backend, 0, sizeof(struct dynarmic));
+    auto backend = new dynarmic{};
     backend->memory = memory;
     backend->monitor = monitor;
     backend->cb64 = nullptr;
@@ -655,7 +661,7 @@ FQL void dynarmic_destroy(dynarmic *dynarmic) {
     if (dynarmic->cb64) delete dynarmic->cb64;
     if (dynarmic->jit32) delete dynarmic->jit32;
     if (dynarmic->cb32) delete dynarmic->cb32;
-    free(dynarmic);
+    delete dynarmic;
 }
 
 FQL void dynarmic_set_svc_callback(dynarmic *dynarmic, cb_call_svc cb, void* user_data) {

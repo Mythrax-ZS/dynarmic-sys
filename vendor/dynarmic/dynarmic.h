@@ -89,7 +89,11 @@ FQL khash_t(memory) *dynarmic_init_memory();
 
 FQL Dynarmic::ExclusiveMonitor *dynarmic_init_monitor(u32 processor_count);
 
+FQL void dynarmic_free_monitor(Dynarmic::ExclusiveMonitor *monitor);
+
 FQL void** dynarmic_init_page_table();
+
+FQL void dynarmic_free_page_table(void** page_table);
 
 FQL dynarmic* dynarmic_new(
         u32 process_id,
