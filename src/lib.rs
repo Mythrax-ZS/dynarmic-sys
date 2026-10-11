@@ -90,7 +90,7 @@ impl FastmemPageTableSlot {
     }
 }
 
-fn page_table_for_fastmem(fastmem_base: *mut c_void) -> *mut *mut c_void {
+fn page_table_for_fastmem(fastmem_base: *mut c_void) -> (*mut *mut c_void, bool) {
     use std::sync::Once;
     static MODE_LOG: Once = Once::new();
     if !shared_fastmem_page_table_enabled() {
@@ -99,7 +99,7 @@ fn page_table_for_fastmem(fastmem_base: *mut c_void) -> *mut *mut c_void {
                 "[Dynarmic] Fastmem page-table mode: private (NEXIUM_DYNARMIC_SHARED_PAGE_TABLE=0)"
             );
         });
-        return unsafe { ffi::dynarmic_init_page_table() };
+        return (unsafe { ffi::dynarmic_init_page_table() }, true);
     }
     MODE_LOG.call_once(|| {
         log::info!("[Dynarmic] Fastmem page-table mode: process-shared by arena base");
@@ -131,7 +131,10 @@ fn page_table_for_fastmem(fastmem_base: *mut c_void) -> *mut *mut c_void {
     if table == 0 {
         error!("[Dynarmic] Failed to initialize fastmem page table");
     }
-    table as *mut *mut c_void
+    (
+        table as *mut *mut c_void,
+        route == FastmemPageTableRoute::PrivateForDifferentBase,
+    )
 }
 
 const SHARED_MONITOR_PROCS: u32 = 8;
@@ -150,11 +153,45 @@ fn shared_exclusive_monitor() -> *mut c_void {
     }
 }
 
+#[derive(Default)]
+struct ProcessorSlots {
+    users: [u32; SHARED_MONITOR_PROCS as usize],
+}
+
+impl ProcessorSlots {
+    fn acquire(&mut self) -> u32 {
+        let (id, users) = self
+            .users
+            .iter_mut()
+            .enumerate()
+            .min_by_key(|(_, users)| **users)
+            .expect("shared monitor has processor slots");
+        *users += 1;
+        id as u32
+    }
+
+    fn release(&mut self, id: u32) {
+        if let Some(users) = self.users.get_mut(id as usize) {
+            *users = users.saturating_sub(1);
+        }
+    }
+}
+
+fn processor_slots() -> std::sync::MutexGuard<'static, ProcessorSlots> {
+    static SLOTS: Mutex<ProcessorSlots> = Mutex::new(ProcessorSlots {
+        users: [0; SHARED_MONITOR_PROCS as usize],
+    });
+    SLOTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn next_processor_id() -> u32 {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-    NEXT.fetch_add(1, Ordering::Relaxed)
-        .min(SHARED_MONITOR_PROCS - 1)
+    processor_slots().acquire()
+}
+
+fn release_processor_id(id: u32) {
+    processor_slots().release(id);
 }
 
 pub type DynarmicContext = Arc<DynarmicContextInner>;
@@ -227,8 +264,11 @@ struct Metadata<'a> {
     unmapped_mem_callback: Option<Box<dyn SFHook + 'a>>,
     until: u64,
     _memory: *mut c_void,
-    _monitor: *mut c_void,
-    _page_table: *mut *mut c_void,
+    monitor: *mut c_void,
+    owns_monitor: bool,
+    processor_id: Option<u32>,
+    page_table: *mut *mut c_void,
+    owns_page_table: bool,
     handle: *mut c_void,
 }
 
@@ -237,6 +277,15 @@ impl Drop for Metadata<'_> {
         log::info!("[dynarmic] Dropping Metadata");
         unsafe {
             ffi::dynarmic_destroy(self.handle);
+            if self.owns_page_table {
+                ffi::dynarmic_free_page_table(self.page_table);
+            }
+            if self.owns_monitor {
+                ffi::dynarmic_free_monitor(self.monitor);
+            }
+        }
+        if let Some(id) = self.processor_id {
+            release_processor_id(id);
         }
     }
 }
@@ -309,8 +358,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 unmapped_mem_callback: None,
                 until: 0,
                 _memory: memory,
-                _monitor: monitor,
-                _page_table: page_table,
+                monitor,
+                owns_monitor: false,
+                processor_id: Some(processor_id),
+                page_table,
+                owns_page_table: true,
                 handle,
             })),
             pd: PhantomData,
@@ -356,7 +408,7 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
 
         let monitor = shared_exclusive_monitor();
         let processor_id = next_processor_id();
-        let page_table = page_table_for_fastmem(fastmem_base);
+        let (page_table, owns_page_table) = page_table_for_fastmem(fastmem_base);
         let handle = unsafe {
             ffi::dynarmic_new_fm2(
                 processor_id,
@@ -382,8 +434,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 unmapped_mem_callback: None,
                 until: 0,
                 _memory: memory,
-                _monitor: monitor,
-                _page_table: page_table,
+                monitor,
+                owns_monitor: false,
+                processor_id: Some(processor_id),
+                page_table,
+                owns_page_table,
                 handle,
             })),
             pd: PhantomData,
@@ -440,8 +495,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 unmapped_mem_callback: None,
                 until: 0,
                 _memory: memory,
-                _monitor: monitor,
-                _page_table: page_table,
+                monitor,
+                owns_monitor: true,
+                processor_id: None,
+                page_table,
+                owns_page_table: true,
                 handle,
             })),
             pd: PhantomData,
@@ -470,8 +528,8 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
         }
         let monitor = shared_exclusive_monitor();
         let processor_id = next_processor_id();
-        let page_table = if fastmem_base.is_null() {
-            unsafe { ffi::dynarmic_init_page_table() }
+        let (page_table, owns_page_table) = if fastmem_base.is_null() {
+            (unsafe { ffi::dynarmic_init_page_table() }, true)
         } else {
             page_table_for_fastmem(fastmem_base)
         };
@@ -498,8 +556,11 @@ impl<'a, T: Clone + Send + Sync> Dynarmic<'a, T> {
                 unmapped_mem_callback: None,
                 until: 0,
                 _memory: memory,
-                _monitor: monitor,
-                _page_table: page_table,
+                monitor,
+                owns_monitor: false,
+                processor_id: Some(processor_id),
+                page_table,
+                owns_page_table,
                 handle,
             })),
             pd: PhantomData,
@@ -1080,7 +1141,7 @@ mod tests {
     use super::{
         code_page_cache_enabled, guarded_fast_paths_enabled, parse_default_on_flag,
         shared_fastmem_page_table_enabled, unsafe_fastmem_enabled, Dynarmic, FastmemPageTableRoute,
-        FastmemPageTableSlot,
+        FastmemPageTableSlot, ProcessorSlots,
     };
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
@@ -1153,6 +1214,21 @@ mod tests {
             different_route,
             FastmemPageTableRoute::PrivateForDifferentBase
         );
+    }
+
+    #[test]
+    fn processor_ids_are_recycled_after_release() {
+        let mut slots = ProcessorSlots::default();
+        let first: Vec<u32> = (0..3).map(|_| slots.acquire()).collect();
+        assert_eq!(first, [0, 1, 2]);
+        slots.release(1);
+        assert_eq!(slots.acquire(), 1);
+        let rest: Vec<u32> = (0..6).map(|_| slots.acquire()).collect();
+        assert_eq!(rest, [3, 4, 5, 6, 7, 0]);
+        slots.release(0);
+        slots.release(0);
+        assert_eq!(slots.acquire(), 0);
+        slots.release(9);
     }
 
     #[test]

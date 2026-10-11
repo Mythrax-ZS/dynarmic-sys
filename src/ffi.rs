@@ -35,7 +35,11 @@ extern "C" {
 
     pub fn dynarmic_init_monitor(processor_count: u32) -> *mut c_void;
 
+    pub fn dynarmic_free_monitor(monitor: *mut c_void);
+
     pub fn dynarmic_init_page_table() -> *mut *mut c_void;
+
+    pub fn dynarmic_free_page_table(page_table: *mut *mut c_void);
 
     pub fn dynarmic_new(
         process_id: u32,
