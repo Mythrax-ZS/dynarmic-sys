@@ -247,9 +247,7 @@ struct TranslatorVisitor final {
     bool LDLAR(Imm<2> size, Reg Rn, Reg Rt);
     bool LDAR(Imm<2> size, Reg Rn, Reg Rt);
     bool CASP(bool sz, bool L, Reg Rs, bool o0, Reg Rn, Reg Rt);
-    bool CASB(bool L, Reg Rs, bool o0, Reg Rn, Reg Rt);
-    bool CASH(bool L, Reg Rs, bool o0, Reg Rn, Reg Rt);
-    bool CAS(bool sz, bool L, Reg Rs, bool o0, Reg Rn, Reg Rt);
+    bool CAS(Imm<2> size, bool L, Reg Rs, bool o0, Reg Rn, Reg Rt);
 
     // Loads and stores - Load register (literal)
     bool LDR_lit_gen(bool opc_0, Imm<19> imm19, Reg Rt);
@@ -293,36 +291,8 @@ struct TranslatorVisitor final {
     bool LDTRSW(Imm<9> imm9, Reg Rn, Reg Rt);
 
     // Loads and stores - Atomic memory options
-    bool LDADDB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDCLRB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDEORB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSETB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMAXB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMINB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMAXB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMINB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool SWPB(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDAPRB(Reg Rn, Reg Rt);
-    bool LDADDH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDCLRH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDEORH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSETH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMAXH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMINH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMAXH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMINH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool SWPH(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDAPRH(Reg Rn, Reg Rt);
-    bool LDADD(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDCLR(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDEOR(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSET(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMAX(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDSMIN(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMAX(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDUMIN(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool SWP(bool A, bool R, Reg Rs, Reg Rn, Reg Rt);
-    bool LDAPR(Reg Rn, Reg Rt);
+    bool AtomicMemoryOperation(Imm<2> size, bool A, bool R, Reg Rs, Imm<4> opc, Reg Rn, Reg Rt);
+    bool LDAPR(Imm<2> size, Reg Rn, Reg Rt);
 
     // Loads and stores - Load/Store register (register offset)
     bool STRx_reg(Imm<2> size, Imm<1> opc_1, Reg Rm, Imm<3> option, bool S, Reg Rn, Reg Rt);
@@ -331,20 +301,8 @@ struct TranslatorVisitor final {
     bool LDR_reg_fpsimd(Imm<2> size, Imm<1> opc_1, Reg Rm, Imm<3> option, bool S, Reg Rn, Vec Vt);
 
     // Loads and stores - Load/Store memory tags
-    bool STG_1(Imm<9> imm9, Reg Rn);
-    bool STG_2(Imm<9> imm9, Reg Rn);
-    bool STG_3(Imm<9> imm9, Reg Rn);
-    bool LDG(Imm<9> offset_imm, Reg Rn, Reg Rt);
-    bool STZG_1(Imm<9> offset_imm, Reg Rn);
-    bool STZG_2(Imm<9> offset_imm, Reg Rn);
-    bool STZG_3(Imm<9> offset_imm, Reg Rn);
-    bool ST2G_1(Imm<9> offset_imm, Reg Rn);
-    bool ST2G_2(Imm<9> offset_imm, Reg Rn);
-    bool ST2G_3(Imm<9> offset_imm, Reg Rn);
+    bool MemoryTagStore(Imm<2> opc, Imm<9> imm9, Imm<2> op2, Reg Rn, Reg Rt);
     bool STGV(Reg Rn, Reg Rt);
-    bool STZ2G_1(Imm<9> offset_imm, Reg Rn);
-    bool STZ2G_2(Imm<9> offset_imm, Reg Rn);
-    bool STZ2G_3(Imm<9> offset_imm, Reg Rn);
     bool LDGV(Reg Rn, Reg Rt);
 
     // Loads and stores - Load/Store register (pointer authentication)

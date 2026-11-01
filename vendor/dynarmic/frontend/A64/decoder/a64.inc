@@ -3,8 +3,8 @@ INST(ADR,                    "ADR",                                       "0ii10
 INST(ADRP,                   "ADRP",                                      "1ii10000iiiiiiiiiiiiiiiiiiiddddd")
 
 // Data processing - Immediate - Add/Sub (with tags)
-//INST(ADDG,                   "ADDG",                                      "1001000110iiiiii00IIIInnnnnddddd") // ARMv8.5
-//INST(SUBG,                   "SUBG",                                      "1101000110iiiiii00IIIInnnnnddddd") // ARMv8.5
+INST(ADDG,                   "ADDG",                                      "1001000110iiiiii00IIIInnnnnddddd")
+INST(SUBG,                   "SUBG",                                      "1101000110iiiiii00IIIInnnnnddddd")
 
 // Data processing - Immediate - Add/Sub
 INST(ADD_imm,                "ADD (immediate)",                           "z0010001ssiiiiiiiiiiiinnnnnddddd")
@@ -63,15 +63,15 @@ INST(SEVL,                   "SEVL",                                      "11010
 //INST(DGH,                    "DGH",                                       "11010101000000110010000011011111") // v8.6
 //INST(WFET,                   "WFET",                                      "110101010000001100010000000ddddd") // v8.7
 //INST(WFIT,                   "WFIT",                                      "110101010000001100010000001ddddd") // v8.7
-//INST(XPAC_1,                 "XPACD, XPACI, XPACLRI",                     "110110101100000101000D11111ddddd")
+INST(XPAC_1,                 "XPACD, XPACI, XPACLRI",                     "110110101100000101000D11111ddddd")
 //INST(XPAC_2,                 "XPACD, XPACI, XPACLRI",                     "11010101000000110010000011111111")
-//INST(PACIA_1,                "PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA", "110110101100000100Z000nnnnnddddd")
+INST(PACIA_1,                "PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA", "110110101100000100Z000nnnnnddddd")
 //INST(PACIA_2,                "PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA", "1101010100000011001000-100-11111")
-//INST(PACIB_1,                "PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB", "110110101100000100Z001nnnnnddddd")
+INST(PACIB_1,                "PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB", "110110101100000100Z001nnnnnddddd")
 //INST(PACIB_2,                "PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB", "1101010100000011001000-101-11111")
-//INST(AUTIA_1,                "AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA", "110110101100000100Z100nnnnnddddd")
+INST(AUTIA_1,                "AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA", "110110101100000100Z100nnnnnddddd")
 //INST(AUTIA_2,                "AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA", "1101010100000011001000-110-11111")
-//INST(AUTIB_1,                "AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB", "110110101100000100Z101nnnnnddddd")
+INST(AUTIB_1,                "AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB", "110110101100000100Z101nnnnnddddd")
 //INST(AUTIB_2,                "AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB", "1101010100000011001000-111-11111")
 //INST(BTI,                    "BTI",                                       "110101010000001100100100ii011111") // ARMv8.5
 //INST(ESB,                    "ESB",                                       "11010101000000110010001000011111")
@@ -122,10 +122,10 @@ INST(BR,                     "BR",                                        "11010
 //INST(DRPS,                   "DRPS",                                      "11010110101111110000001111100000")
 //INST(ERET,                   "ERET",                                      "11010110100111110000001111100000")
 INST(RET,                    "RET",                                       "1101011001011111000000nnnnn00000")
-//INST(BLRA,                   "BLRAA, BLRAAZ, BLRAB, BLRABZ",              "1101011Z0011111100001Mnnnnnmmmmm") // ARMv8.3
-//INST(BRA,                    "BRAA, BRAAZ, BRAB, BRABZ",                  "1101011Z0001111100001Mnnnnnmmmmm") // ARMv8.3
+INST(BLRA,                   "BLRAA, BLRAAZ, BLRAB, BLRABZ",              "1101011Z0011111100001Mnnnnnmmmmm")
+INST(BRA,                    "BRAA, BRAAZ, BRAB, BRABZ",                  "1101011Z0001111100001Mnnnnnmmmmm")
 //INST(ERETA,                  "ERETAA, ERETAB",                            "110101101001111100001M1111111111") // ARMv8.3
-//INST(RETA,                   "RETAA, RETAB",                              "110101100101111100001M1111111111") // ARMv8.3
+INST(RETA,                   "RETAA, RETAB",                              "110101100101111100001M1111111111")
 
 // Unconditional branch (immediate)
 INST(B_uncond,               "B",                                         "000101iiiiiiiiiiiiiiiiiiiiiiiiii")
@@ -182,10 +182,8 @@ INST(STLLR,                  "STLLRB, STLLRH, STLLR",                     "zz001
 INST(STLR,                   "STLRB, STLRH, STLR",                        "zz00100010011111111111nnnnnttttt")
 INST(LDLAR,                  "LDLARB, LDLARH, LDLAR",                     "zz00100011011111011111nnnnnttttt")
 INST(LDAR,                   "LDARB, LDARH, LDAR",                        "zz00100011011111111111nnnnnttttt")
-//INST(CASP,                   "CASP, CASPA, CASPAL, CASPL",                "0z0010000L1sssssp11111nnnnnttttt") // ARMv8.1
-//INST(CASB,                   "CASB, CASAB, CASALB, CASLB",                "000010001L1sssssp11111nnnnnttttt") // ARMv8.1
-//INST(CASH,                   "CASH, CASAH, CASALH, CASLH",                "010010001L1sssssp11111nnnnnttttt") // ARMv8.1
-//INST(CAS,                    "CAS, CASA, CASAL, CASL",                    "1z0010001L1sssssp11111nnnnnttttt") // ARMv8.1
+INST(CASP,                   "CASP, CASPA, CASPAL, CASPL",                "0z0010000L1sssssp11111nnnnnttttt")
+INST(CAS,                    "CASB, CASH, CAS",                           "zz0010001L1sssssp11111nnnnnttttt")
 
 // Loads and stores - Load register (literal)
 INST(LDR_lit_gen,            "LDR (literal)",                             "0z011000iiiiiiiiiiiiiiiiiiittttt")
@@ -223,9 +221,9 @@ INST(STR_imm_fpsimd_1,       "STR (immediate, SIMD&FP)",                  "zz111
 INST(STR_imm_fpsimd_2,       "STR (immediate, SIMD&FP)",                  "zz111101o0iiiiiiiiiiiinnnnnttttt")
 INST(LDR_imm_fpsimd_1,       "LDR (immediate, SIMD&FP)",                  "zz111100o10iiiiiiiiip1nnnnnttttt")
 INST(LDR_imm_fpsimd_2,       "LDR (immediate, SIMD&FP)",                  "zz111101o1iiiiiiiiiiiinnnnnttttt")
-//INST(STGP_1,               "STGP (post-index)",                         "0110100010iiiiiiimmmmmnnnnnttttt") // ARMv8.5
-//INST(STGP_2,               "STGP (pre-index)",                          "0110100110iiiiiiimmmmmnnnnnttttt") // ARMv8.5
-//INST(STGP_3,               "STGP (signed-offset)",                      "0110100100iiiiiiimmmmmnnnnnttttt") // ARMv8.5
+INST(STGP_1,               "STGP (post-index)",                         "0110100010iiiiiiimmmmmnnnnnttttt")
+INST(STGP_2,               "STGP (pre-index)",                          "0110100110iiiiiiimmmmmnnnnnttttt")
+INST(STGP_3,               "STGP (signed-offset)",                      "0110100100iiiiiiimmmmmnnnnnttttt")
 
 // Loads and stores - Load/Store register (unprivileged)
 INST(STTRB,                  "STTRB",                                     "00111000000iiiiiiiii10nnnnnttttt")
@@ -239,36 +237,8 @@ INST(LDTR,                   "LDTR",                                      "zz111
 INST(LDTRSW,                 "LDTRSW",                                    "10111000100iiiiiiiii10nnnnnttttt")
 
 // Loads and stores - Atomic memory options
-//INST(LDADDB,                 "LDADDB, LDADDAB, LDADDALB, LDADDLB",        "00111000AR1sssss000000nnnnnttttt")
-//INST(LDCLRB,                 "LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB",        "00111000AR1sssss000100nnnnnttttt")
-//INST(LDEORB,                 "LDEORB, LDEORAB, LDEORALB, LDEORLB",        "00111000AR1sssss001000nnnnnttttt")
-//INST(LDSETB,                 "LDSETB, LDSETAB, LDSETALB, LDSETLB",        "00111000AR1sssss001100nnnnnttttt")
-//INST(LDSMAXB,                "LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB",    "00111000AR1sssss010000nnnnnttttt")
-//INST(LDSMINB,                "LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB",    "00111000AR1sssss010100nnnnnttttt")
-//INST(LDUMAXB,                "LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB",    "00111000AR1sssss011000nnnnnttttt")
-//INST(LDUMINB,                "LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB",    "00111000AR1sssss011100nnnnnttttt")
-//INST(SWPB,                   "SWPB, SWPAB, SWPALB, SWPLB",                "00111000AR1sssss100000nnnnnttttt")
-//INST(LDAPRB,                 "LDAPRB",                                    "0011100010111111110000nnnnnttttt")
-//INST(LDADDH,                 "LDADDH, LDADDAH, LDADDALH, LDADDLH",        "01111000AR1sssss000000nnnnnttttt")
-//INST(LDCLRH,                 "LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH",        "01111000AR1sssss000100nnnnnttttt")
-//INST(LDEORH,                 "LDEORH, LDEORAH, LDEORALH, LDEORLH",        "01111000AR1sssss001000nnnnnttttt")
-//INST(LDSETH,                 "LDSETH, LDSETAH, LDSETALH, LDSETLH",        "01111000AR1sssss001100nnnnnttttt")
-//INST(LDSMAXH,                "LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH",    "01111000AR1sssss010000nnnnnttttt")
-//INST(LDSMINH,                "LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH",    "01111000AR1sssss010100nnnnnttttt")
-//INST(LDUMAXH,                "LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH",    "01111000AR1sssss011000nnnnnttttt")
-//INST(LDUMINH,                "LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH",    "01111000AR1sssss011100nnnnnttttt")
-//INST(SWPH,                   "SWPH, SWPAH, SWPALH, SWPLH",                "01111000AR1sssss100000nnnnnttttt")
-//INST(LDAPRH,                 "LDAPRH",                                    "0111100010111111110000nnnnnttttt")
-//INST(LDADD,                  "LDADD, LDADDA, LDADDAL, LDADDL",            "1-111000AR1sssss000000nnnnnttttt")
-//INST(LDCLR,                  "LDCLR, LDCLRA, LDCLRAL, LDCLRL",            "1-111000AR1sssss000100nnnnnttttt")
-//INST(LDEOR,                  "LDEOR, LDEORA, LDEORAL, LDEORL",            "1-111000AR1sssss001000nnnnnttttt")
-//INST(LDSET,                  "LDSET, LDSETA, LDSETAL, LDSETL",            "1-111000AR1sssss001100nnnnnttttt")
-//INST(LDSMAX,                 "LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL",        "1-111000AR1sssss010000nnnnnttttt")
-//INST(LDSMIN,                 "LDSMIN, LDSMINA, LDSMINAL, LDSMINL",        "1-111000AR1sssss010100nnnnnttttt")
-//INST(LDUMAX,                 "LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL",        "1-111000AR1sssss011000nnnnnttttt")
-//INST(LDUMIN,                 "LDUMIN, LDUMINA, LDUMINAL, LDUMINL",        "1-111000AR1sssss011100nnnnnttttt")
-//INST(SWP,                    "SWP, SWPA, SWPAL, SWPL",                    "1-111000AR1sssss100000nnnnnttttt")
-//INST(LDAPR,                  "LDAPR",                                     "1-11100010111111110000nnnnnttttt")
+INST(AtomicMemoryOperation,  "LDADD, LDCLR, LDEOR, LDSET, LDMIN/MAX, SWP", "zz111000AR1sssssoooo00nnnnnttttt")
+INST(LDAPR,                  "LDAPRB, LDAPRH, LDAPR",                     "zz11100010111111110000nnnnnttttt")
 //INST(LD64B,                  "LD64B",                                     "1111100000111111110100nnnnnttttt") // v8.7
 //INST(ST64B,                  "ST64B",                                     "1111100000111111100100nnnnnttttt") // v8.7
 //INST(ST64BV,                 "ST64BV",                                    "11111000001sssss101100nnnnnttttt") // v8.7
@@ -281,24 +251,12 @@ INST(STR_reg_fpsimd,         "STR (register, SIMD&FP)",                   "zz111
 INST(LDR_reg_fpsimd,         "LDR (register, SIMD&FP)",                   "zz111100o11mmmmmxxxS10nnnnnttttt")
 
 // Loads and stores - Load/Store memory tags
-//INST(STG_1,                  "STG (post-index)",                          "11011001001iiiiiiiii01nnnnn11111") // ARMv8.5
-//INST(STG_2,                  "STG (pre-index)",                           "11011001001iiiiiiiii11nnnnn11111") // ARMv8.5
-//INST(STG_3,                  "STG (signed-offset)",                       "11011001001iiiiiiiii10nnnnn11111") // ARMv8.5
-//INST(LDG,                    "LDG",                                       "11011001011iiiiiiiii00nnnnnttttt") // ARMv8.5
-//INST(STZG_1,                 "STZG (post-index)",                         "11011001011iiiiiiiii01nnnnn11111") // ARMv8.5
-//INST(STZG_2,                 "STZG (pre-index)",                          "11011001011iiiiiiiii11nnnnn11111") // ARMv8.5
-//INST(STZG_3,                 "STZG (signed-offset)",                      "11011001011iiiiiiiii10nnnnn11111") // ARMv8.5
-//INST(ST2G_1,                 "ST2G (post-index)",                         "11011001101iiiiiiiii01nnnnn11111") // ARMv8.5
-//INST(ST2G_2,                 "ST2G (pre-index)",                          "11011001101iiiiiiiii11nnnnn11111") // ARMv8.5
-//INST(ST2G_3,                 "ST2G (signed-offset)",                      "11011001101iiiiiiiii10nnnnn11111") // ARMv8.5
+INST(MemoryTagStore,         "STG, STZG, ST2G, STZ2G, LDG",               "11011001oo1iiiiiiiiixxnnnnnttttt")
 //INST(STGV,                   "STGV",                                      "1101100110100000000000nnnnnttttt") // ARMv8.5
-//INST(STZ2G_1,                "STZ2G (post-index)",                        "11011001111iiiiiiiii01nnnnn11111") // ARMv8.5
-//INST(STZ2G_2,                "STZ2G (pre-index)",                         "11011001111iiiiiiiii11nnnnn11111") // ARMv8.5
-//INST(STZ2G_3,                "STZ2G (signed-offset)",                     "11011001111iiiiiiiii10nnnnn11111") // ARMv8.5
 //INST(LDGV,                   "LDGV",                                      "1101100111100000000000nnnnnttttt") // ARMv8.5
 
 // Loads and stores - Load/Store register (pointer authentication)
-//INST(LDRA,                   "LDRAA, LDRAB",                              "11111000MS1iiiiiiiiiW1nnnnnttttt")
+INST(LDRA,                   "LDRAA, LDRAB",                              "11111000MS1iiiiiiiiiW1nnnnnttttt")
 
 // Data Processing - Register - 2 source
 INST(UDIV,                   "UDIV",                                      "z0011010110mmmmm000010nnnnnddddd")
@@ -309,11 +267,11 @@ INST(ASRV,                   "ASRV",                                      "z0011
 INST(RORV,                   "RORV",                                      "z0011010110mmmmm001011nnnnnddddd")
 INST(CRC32,                  "CRC32B, CRC32H, CRC32W, CRC32X",            "z0011010110mmmmm0100zznnnnnddddd")
 INST(CRC32C,                 "CRC32CB, CRC32CH, CRC32CW, CRC32CX",        "z0011010110mmmmm0101zznnnnnddddd")
-//INST(PACGA,                  "PACGA",                                     "10011010110mmmmm001100nnnnnddddd")
-//INST(SUBP,                   "SUBP",                                      "10011010110mmmmm000000nnnnnddddd") // ARMv8.5
-//INST(IRG,                    "IRG",                                       "10011010110mmmmm000100nnnnnddddd") // ARMv8.5
-//INST(GMI,                    "GMI",                                       "10011010110mmmmm000101nnnnnddddd") // ARMv8.5
-//INST(SUBPS,                  "SUBPS",                                     "10111010110mmmmm000000nnnnnddddd") // ARMv8.5
+INST(PACGA,                  "PACGA",                                     "10011010110mmmmm001100nnnnnddddd")
+INST(SUBP,                   "SUBP",                                      "10011010110mmmmm000000nnnnnddddd")
+INST(IRG,                    "IRG",                                       "10011010110mmmmm000100nnnnnddddd")
+INST(GMI,                    "GMI",                                       "10011010110mmmmm000101nnnnnddddd")
+INST(SUBPS,                  "SUBPS",                                     "10111010110mmmmm000000nnnnnddddd")
 
 // Data Processing - Register - 1 source
 INST(RBIT_int,               "RBIT",                                      "z101101011000000000000nnnnnddddd")
@@ -322,10 +280,10 @@ INST(REV,                    "REV",                                       "z1011
 INST(CLZ_int,                "CLZ",                                       "z101101011000000000100nnnnnddddd")
 INST(CLS_int,                "CLS",                                       "z101101011000000000101nnnnnddddd")
 INST(REV32_int,              "REV32",                                     "1101101011000000000010nnnnnddddd")
-//INST(PACDA,                  "PACDA, PACDZA",                             "110110101100000100Z010nnnnnddddd")
-//INST(PACDB,                  "PACDB, PACDZB",                             "110110101100000100Z011nnnnnddddd")
-//INST(AUTDA,                  "AUTDA, AUTDZA",                             "110110101100000100Z110nnnnnddddd")
-//INST(AUTDB,                  "AUTDB, AUTDZB",                             "110110101100000100Z111nnnnnddddd")
+INST(PACDA,                  "PACDA, PACDZA",                             "110110101100000100Z010nnnnnddddd")
+INST(PACDB,                  "PACDB, PACDZB",                             "110110101100000100Z011nnnnnddddd")
+INST(AUTDA,                  "AUTDA, AUTDZA",                             "110110101100000100Z110nnnnnddddd")
+INST(AUTDB,                  "AUTDB, AUTDZB",                             "110110101100000100Z111nnnnnddddd")
 
 // Data Processing - Register - Logical (shifted register)
 INST(AND_shift,              "AND (shifted register)",                    "z0001010ss0mmmmmiiiiiinnnnnddddd")
