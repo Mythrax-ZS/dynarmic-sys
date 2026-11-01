@@ -187,6 +187,8 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/dynarmic/backend/x64/a64_emit_x64.cpp");
     println!("cargo:rerun-if-changed=vendor/dynarmic/backend/x64/a64_interface.cpp");
     println!("cargo:rerun-if-changed=vendor/dynarmic/interface/A64/a64.h");
+    println!("cargo:rerun-if-changed=vendor/dynarmic/frontend");
+    println!("cargo:rerun-if-changed=vendor/CMakeLists.txt");
     match pkg_config::Config::new()
         .atleast_version("2")
         .cargo_metadata(false)
